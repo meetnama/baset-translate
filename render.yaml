@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: locaitra-translate
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install --include=dev && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: TRANSLATION_MODE
+        value: live
+      - key: AUTH_SECURE_COOKIE
+        value: "true"
+      - key: HOSTED
+        value: "true"
+      # Add these as secret values in the Render dashboard (do not commit real secrets):
+      # PHRASE_API_TOKEN, PHRASE_AUTH_MODE, PHRASE_OAUTH_URL, PHRASE_BASE_URL,
+      # PHRASE_PROJECT_TEMPLATE_UID, AUTH_ADMIN_USER, AUTH_ADMIN_PASSWORD, AUTH_SECRET
