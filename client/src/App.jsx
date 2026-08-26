@@ -10,9 +10,99 @@ function extOf(name) {
   return (name.split('.').pop() || '').toLowerCase();
 }
 
+function checkUploadFiles(list, allowedExts) {
+  const allowed = new Set((allowedExts || []).map((e) => String(e).toLowerCase()));
+  const next = [];
+  const skipped = [];
+  for (const file of Array.from(list || [])) {
+    const ext = extOf(file.name);
+    const hasDot = String(file.name || '').includes('.');
+    if (!file.size) skipped.push(`${file.name}: empty file`);
+    else if (!hasDot || !ext) skipped.push(`${file.name}: missing file type`);
+    else if (allowed.size && !allowed.has(ext)) skipped.push(`${file.name}: .${ext} is not supported`);
+    else {
+      next.push({
+        id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
+        name: file.name,
+        size: file.size,
+        file,
+      });
+    }
+  }
+  return { next, skipped };
+}
+
 async function api(url, options = {}) {
   const res = await fetch(url, { credentials: 'include', ...options });
   return res;
+}
+
+function BrandLogo({ className = 'logo' }) {
+  return (
+    <img
+      src="/lingotrust-logo.png"
+      alt="LingoTrust"
+      className={className}
+      width={300}
+      height={59}
+      decoding="async"
+    />
+  );
+}
+
+function useSmoothProgress(serverProgress, { active, done } = {}) {
+  const [display, setDisplay] = useState(0);
+  const displayRef = useRef(0);
+  const serverRef = useRef(0);
+
+  useEffect(() => {
+    serverRef.current = Number(serverProgress) || 0;
+  }, [serverProgress]);
+
+  useEffect(() => {
+    if (!active && !done) {
+      displayRef.current = 0;
+      setDisplay(0);
+      return undefined;
+    }
+
+    let frame = 0;
+    const tick = () => {
+      const server = done ? 100 : serverRef.current;
+      let cur = displayRef.current;
+      let target;
+
+      if (done) {
+        target = 100;
+      } else if (active) {
+        if (cur < server - 0.5) {
+          target = server;
+        } else if (server < 100) {
+          const creepCap = Math.min(96, server + (server === 0 ? 18 : 36));
+          target = Math.max(server, Math.min(creepCap, cur + 0.2));
+        } else {
+          target = server;
+        }
+      } else {
+        target = server;
+      }
+
+      const diff = target - cur;
+      if (Math.abs(diff) <= 0.12) cur = target;
+      else cur += diff * 0.06;
+
+      if (done && cur >= 99.2) cur = 100;
+
+      displayRef.current = cur;
+      setDisplay(Math.round(cur));
+      frame = requestAnimationFrame(tick);
+    };
+
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [active, done]);
+
+  return display;
 }
 
 function LoginScreen({ onLoggedIn }) {
@@ -43,122 +133,306 @@ function LoginScreen({ onLoggedIn }) {
   };
 
   return (
-    <div className="app login-screen">
-      <header className="top">
-        <div className="brand">
-          <div className="logo">L</div>
+    <div className="login-screen">
+      <div className="login-shell">
+        <aside className="login-aside" aria-hidden="true">
           <div>
-            <h1>Locaitra Translate</h1>
-            <p>Sign in to continue.</p>
+            <BrandLogo />
+            <h1>Translate</h1>
+            <p>Upload a file. Get it translated. Download the result.</p>
           </div>
-        </div>
-      </header>
+          <div className="login-aside-meta">
+            <span>Multi-language</span>
+            <span>Secure sign-in</span>
+            <span>Download ready</span>
+          </div>
+        </aside>
 
-      <section className="card login-card">
-        <h2>Sign in</h2>
-        <p className="sub">Use the username and password provided to you.</p>
-        {error && <div className="error-banner" style={{ marginBottom: 14 }}>{error}</div>}
-        <form className="login-form" onSubmit={submit}>
+        <div className="login-main">
+          <section className="card login-card">
+            <h2>Sign in</h2>
+            <p className="sub">Use the username and password provided to you.</p>
+            {error && <div className="error-banner" style={{ marginBottom: 14 }}>{error}</div>}
+            <form className="login-form" onSubmit={submit}>
+              <label className="field">
+                <span>Username</span>
+                <input
+                  type="text"
+                  name="username"
+                  autoComplete="username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  disabled={busy}
+                  required
+                />
+              </label>
+              <label className="field">
+                <span>Password</span>
+                <input
+                  type="password"
+                  name="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  disabled={busy}
+                  required
+                />
+              </label>
+              <div className="actions" style={{ marginTop: 8 }}>
+                <button type="submit" className="btn btn-primary" disabled={busy || !username || !password}>
+                  {busy ? 'Signing in…' : 'Sign in'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </div>
+
+      <p className="footer-note">LingoTrust Translate</p>
+    </div>
+  );
+}
+
+function processIdFromUser(user) {
+  if (!user?.allowedCustomerIds?.length) return 'all';
+  return user.allowedCustomerIds[0];
+}
+
+function allowedIdsFromProcess(processId) {
+  if (!processId || processId === 'all') return null;
+  return [processId];
+}
+
+function processLabel(user, customers) {
+  if (user.role === 'admin') return 'All processes';
+  const id = processIdFromUser(user);
+  if (id === 'all') return 'All processes';
+  const c = customers.find((x) => x.id === id);
+  if (c) return c.mode === 'workflow' ? `${c.name} (three-step)` : `${c.name} (one pass)`;
+  return id;
+}
+
+function userSummaryLine(user, customers) {
+  if (user.role === 'admin') return 'Admin · all processes · unlimited words';
+  return `${processLabel(user, customers)} · ${quotaLabel(user)}`;
+}
+
+function UserEditorDialog({
+  open,
+  mode,
+  user,
+  customers,
+  busy,
+  onClose,
+  onSave,
+}) {
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState('user');
+  const [processId, setProcessId] = useState('all');
+  const [wordQuota, setWordQuota] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    if (mode === 'edit' && user) {
+      setUsername(user.username);
+      setPassword('');
+      setRole(user.role);
+      setProcessId(processIdFromUser(user));
+      setWordQuota(user.wordQuota ?? '');
+    } else {
+      setUsername('');
+      setPassword('');
+      setRole('user');
+      setProcessId('all');
+      setWordQuota('');
+    }
+  }, [open, mode, user]);
+
+  if (!open) return null;
+
+  const submit = (e) => {
+    e.preventDefault();
+    onSave({
+      username: username.trim(),
+      password,
+      role,
+      processId,
+      wordQuota: String(wordQuota).trim() ? Number(wordQuota) : null,
+    });
+  };
+
+  return (
+    <div className="modal-backdrop" onClick={busy ? undefined : onClose}>
+      <div
+        className="modal-card"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="user-editor-title"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h3 id="user-editor-title">{mode === 'edit' ? `Edit ${user?.username || 'user'}` : 'Add user'}</h3>
+        <form className="user-editor-form" onSubmit={submit}>
           <label className="field">
             <span>Username</span>
             <input
               type="text"
-              name="username"
-              autoComplete="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              disabled={busy}
+              disabled={busy || mode === 'edit'}
               required
+              autoComplete="off"
             />
           </label>
           <label className="field">
-            <span>Password</span>
+            <span>{mode === 'edit' ? 'New password (optional)' : 'Password'}</span>
             <input
-              type="password"
-              name="password"
-              autoComplete="current-password"
+              type="text"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={busy}
-              required
+              required={mode === 'add'}
+              autoComplete="off"
             />
           </label>
-          <div className="actions" style={{ marginTop: 8 }}>
-            <button type="submit" className="btn btn-primary" disabled={busy || !username || !password}>
-              {busy ? 'Signing in…' : 'Sign in'}
+          <label className="field">
+            <span>Role</span>
+            <select value={role} onChange={(e) => setRole(e.target.value)} disabled={busy}>
+              <option value="user">User</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+          {role !== 'admin' && (
+            <>
+              <label className="field">
+                <span>Process</span>
+                <select value={processId} onChange={(e) => setProcessId(e.target.value)} disabled={busy}>
+                  <option value="all">All processes</option>
+                  {customers.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.mode === 'workflow' ? 'three-step' : 'one pass'})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Word quota</span>
+                <input
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="Unlimited"
+                  value={wordQuota}
+                  onChange={(e) => setWordQuota(e.target.value)}
+                  disabled={busy}
+                  autoComplete="off"
+                />
+              </label>
+            </>
+          )}
+          <div className="modal-actions">
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={onClose}>
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={busy || !username || (mode === 'add' && !password)}
+            >
+              {mode === 'edit' ? 'Save changes' : 'Add user'}
             </button>
           </div>
         </form>
-      </section>
-
-      <p className="footer-note">Locaitra Translate</p>
+      </div>
     </div>
   );
 }
 
 function ManageUsers() {
   const [users, setUsers] = useState([]);
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState('user');
+  const [customers, setCustomers] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [dialogMode, setDialogMode] = useState('add');
+  const [editingUser, setEditingUser] = useState(null);
 
   const load = useCallback(async () => {
-    const res = await api('/api/users');
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || 'Couldn’t load users.');
-    setUsers(data.users || []);
+    const [usersRes, custRes] = await Promise.all([api('/api/users'), api('/api/customers')]);
+    const usersData = await usersRes.json().catch(() => ({}));
+    const custData = await custRes.json().catch(() => ({}));
+    if (!usersRes.ok) throw new Error(usersData.error || 'Couldn’t load users.');
+    if (!custRes.ok) throw new Error(custData.error || 'Couldn’t load customers.');
+    setUsers(usersData.users || []);
+    setCustomers(custData.customers || []);
   }, []);
 
   useEffect(() => {
     load().catch((err) => setError(err.message || 'Couldn’t load users.'));
   }, [load]);
 
-  const addUser = async (e) => {
-    e.preventDefault();
-    if (busy) return;
-    setBusy(true);
+  const openAdd = () => {
+    setEditingUser(null);
+    setDialogMode('add');
+    setDialogOpen(true);
     setError('');
-    setInfo('');
-    try {
-      const res = await api('/api/users', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password, role }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Couldn’t add user.');
-      setUsername('');
-      setPassword('');
-      setRole('user');
-      setInfo(`Added ${data.username}.`);
-      await load();
-    } catch (err) {
-      setError(err.message || 'Couldn’t add user.');
-    } finally {
-      setBusy(false);
-    }
   };
 
-  const resetPassword = async (name) => {
-    const next = window.prompt(`New password for ${name}`);
-    if (next == null) return;
+  const openEdit = (u) => {
+    setEditingUser(u);
+    setDialogMode('edit');
+    setDialogOpen(true);
+    setError('');
+  };
+
+  const closeDialog = () => {
+    if (busy) return;
+    setDialogOpen(false);
+    setEditingUser(null);
+  };
+
+  const saveUser = async ({ username, password, role, processId, wordQuota }) => {
     setBusy(true);
     setError('');
     setInfo('');
     try {
-      const res = await api(`/api/users/${encodeURIComponent(name)}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: next }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Couldn’t update password.');
-      setInfo(`Password updated for ${name}.`);
+      if (dialogMode === 'add') {
+        const res = await api('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username,
+            password,
+            role,
+            allowedCustomerIds: role === 'admin' ? null : allowedIdsFromProcess(processId),
+            wordQuota: role === 'admin' ? null : wordQuota,
+          }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Couldn’t add user.');
+        setInfo(`Added ${data.username}.`);
+      } else {
+        const payload = {
+          role,
+          allowedCustomerIds: role === 'admin' ? null : allowedIdsFromProcess(processId),
+          wordQuota: role === 'admin' ? null : wordQuota,
+        };
+        if (password) payload.password = password;
+        const res = await api(`/api/users/${encodeURIComponent(editingUser.username)}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || 'Couldn’t update user.');
+        setInfo(`Updated ${editingUser.username}.`);
+      }
+      setDialogOpen(false);
+      setEditingUser(null);
+      await load();
     } catch (err) {
-      setError(err.message || 'Couldn’t update password.');
+      setError(err.message || 'Couldn’t save user.');
     } finally {
       setBusy(false);
     }
@@ -184,65 +458,34 @@ function ManageUsers() {
 
   return (
     <section className="card">
-      <h2>Manage users</h2>
-      <p className="sub">Add accounts, reset passwords, or remove access.</p>
+      <div className="card-head-row">
+        <div>
+          <h2>Manage users</h2>
+          <p className="sub">Add accounts or edit role, process, and word quota in one place.</p>
+        </div>
+        <button type="button" className="btn btn-primary" disabled={busy} onClick={openAdd}>
+          Add user
+        </button>
+      </div>
       {error && <div className="error-banner" style={{ marginBottom: 14 }}>{error}</div>}
       {info && <p className="sub" style={{ color: 'var(--ok)', marginBottom: 14 }}>{info}</p>}
 
-      <form className="user-admin-form" onSubmit={addUser}>
-        <label className="field">
-          <span>Username</span>
-          <input
-            type="text"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            disabled={busy}
-            required
-            autoComplete="off"
-          />
-        </label>
-        <label className="field">
-          <span>Password</span>
-          <input
-            type="text"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={busy}
-            required
-            autoComplete="off"
-          />
-        </label>
-        <label className="field">
-          <span>Role</span>
-          <select value={role} onChange={(e) => setRole(e.target.value)} disabled={busy}>
-            <option value="user">User</option>
-            <option value="admin">Admin</option>
-          </select>
-        </label>
-        <div className="field user-admin-actions">
-          <span>&nbsp;</span>
-          <button type="submit" className="btn btn-primary" disabled={busy || !username || !password}>
-            Add user
-          </button>
-        </div>
-      </form>
-
-      <div className="files" style={{ marginTop: 16 }}>
+      <div className="files" style={{ marginTop: 8 }}>
         {users.map((u) => (
-          <div className="file-row" key={u.username}>
+          <div key={u.username} className="file-row">
             <div className="file-ic">{u.role === 'admin' ? 'ADM' : 'USR'}</div>
             <div className="file-meta">
               <div className="nm">{u.username}</div>
-              <div className="mt">{u.role === 'admin' ? 'Admin' : 'User'}</div>
+              <div className="mt">{userSummaryLine(u, customers)}</div>
             </div>
             <button
               type="button"
               className="btn btn-ghost"
               style={{ padding: '8px 12px' }}
               disabled={busy}
-              onClick={() => resetPassword(u.username)}
+              onClick={() => openEdit(u)}
             >
-              Reset password
+              Edit
             </button>
             <button
               type="button"
@@ -257,6 +500,343 @@ function ManageUsers() {
         ))}
         {!users.length && <p className="sub">No users yet.</p>}
       </div>
+
+      <UserEditorDialog
+        open={dialogOpen}
+        mode={dialogMode}
+        user={editingUser}
+        customers={customers}
+        busy={busy}
+        onClose={closeDialog}
+        onSave={saveUser}
+      />
+    </section>
+  );
+}
+
+function quotaLabel(user) {
+  if (user.role === 'admin' || user.wordQuota == null) return 'Unlimited words';
+  const used = user.wordsUsed ?? 0;
+  const left = user.wordsRemaining ?? Math.max(0, user.wordQuota - used);
+  return `${used.toLocaleString()} / ${user.wordQuota.toLocaleString()} words · ${left.toLocaleString()} left`;
+}
+
+function ManageCustomers() {
+  const empty = { name: '', hint: '', templateUid: '', mode: 'single' };
+  const [customers, setCustomers] = useState([]);
+  const [form, setForm] = useState(empty);
+  const [editId, setEditId] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+
+  const load = useCallback(async () => {
+    const res = await api('/api/customers');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Couldn’t load customers.');
+    setCustomers(data.customers || []);
+  }, []);
+
+  useEffect(() => {
+    load().catch((err) => setError(err.message || 'Couldn’t load customers.'));
+  }, [load]);
+
+  const save = async (e) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    setInfo('');
+    try {
+      const url = editId ? `/api/customers/${encodeURIComponent(editId)}` : '/api/customers';
+      const res = await api(url, {
+        method: editId ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Couldn’t save customer.');
+      setForm(empty);
+      setEditId('');
+      setInfo(editId ? `Updated ${data.name}.` : `Added ${data.name}.`);
+      await load();
+    } catch (err) {
+      setError(err.message || 'Couldn’t save customer.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startEdit = (c) => {
+    setEditId(c.id);
+    setForm({
+      name: c.name || '',
+      hint: c.hint || '',
+      templateUid: c.templateUid || '',
+      mode: c.mode === 'workflow' ? 'workflow' : 'single',
+    });
+    setInfo('');
+    setError('');
+  };
+
+  const removeCustomer = async (c) => {
+    if (!window.confirm(`Remove customer “${c.name}”?`)) return;
+    setBusy(true);
+    setError('');
+    setInfo('');
+    try {
+      const res = await api(`/api/customers/${encodeURIComponent(c.id)}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Couldn’t remove customer.');
+      if (editId === c.id) {
+        setEditId('');
+        setForm(empty);
+      }
+      setInfo(`Removed ${c.name}.`);
+      await load();
+    } catch (err) {
+      setError(err.message || 'Couldn’t remove customer.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="card">
+      <h2>Customers</h2>
+      <p className="sub">
+        Name shown on screen, plus which translation template to run. Set memory, terms, and writing rules in your translation setup first, then paste that template ID here.
+      </p>
+      {error && <div className="error-banner" style={{ marginBottom: 14 }}>{error}</div>}
+      {info && <p className="sub" style={{ color: 'var(--ok)', marginBottom: 14 }}>{info}</p>}
+
+      <form className="user-admin-form customer-admin-form" onSubmit={save}>
+        <label className="field">
+          <span>Name</span>
+          <input
+            type="text"
+            value={form.name}
+            onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+            disabled={busy}
+            required
+          />
+        </label>
+        <label className="field">
+          <span>Template ID</span>
+          <input
+            type="text"
+            value={form.templateUid}
+            onChange={(e) => setForm((p) => ({ ...p, templateUid: e.target.value }))}
+            disabled={busy}
+            required
+            autoComplete="off"
+          />
+        </label>
+        <label className="field">
+          <span>Process</span>
+          <select
+            value={form.mode}
+            onChange={(e) => setForm((p) => ({ ...p, mode: e.target.value }))}
+            disabled={busy}
+          >
+            <option value="single">One pass</option>
+            <option value="workflow">Three-step</option>
+          </select>
+        </label>
+        <div className="field user-admin-actions">
+          <span>&nbsp;</span>
+          <button type="submit" className="btn btn-primary" disabled={busy || !form.name || !form.templateUid}>
+            {editId ? 'Save' : 'Add customer'}
+          </button>
+        </div>
+        <label className="field" style={{ gridColumn: '1 / -1' }}>
+          <span>Short note (optional)</span>
+          <input
+            type="text"
+            value={form.hint}
+            onChange={(e) => setForm((p) => ({ ...p, hint: e.target.value }))}
+            disabled={busy}
+            placeholder="Shown under the customer name"
+          />
+        </label>
+      </form>
+      {editId && (
+        <div className="actions" style={{ marginTop: 8 }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            disabled={busy}
+            onClick={() => { setEditId(''); setForm(empty); }}
+          >
+            Cancel edit
+          </button>
+        </div>
+      )}
+
+      <div className="files" style={{ marginTop: 16 }}>
+        {customers.map((c) => (
+          <div className="file-row" key={c.id}>
+            <div className="file-ic">{c.mode === 'workflow' ? '3S' : '1P'}</div>
+            <div className="file-meta">
+              <div className="nm">{c.name}</div>
+              <div className="mt">{c.mode === 'workflow' ? 'Three-step' : 'One pass'} · template {c.templateUid}</div>
+            </div>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ padding: '8px 12px' }}
+              disabled={busy}
+              onClick={() => startEdit(c)}
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              style={{ padding: '8px 12px' }}
+              disabled={busy}
+              onClick={() => removeCustomer(c)}
+            >
+              Remove
+            </button>
+          </div>
+        ))}
+        {!customers.length && <p className="sub">No customers yet.</p>}
+      </div>
+    </section>
+  );
+}
+
+function formatStatDate(dateStr) {
+  if (!dateStr) return '—';
+  const [y, m, d] = dateStr.split('-').map(Number);
+  if (!y || !m || !d) return dateStr;
+  return new Date(y, m - 1, d).toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function ManageWordStats() {
+  const [summary, setSummary] = useState({ totals: { fileCount: 0, totalWords: 0, jobCount: 0 }, byDate: [] });
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+
+  const load = useCallback(async () => {
+    const res = await api('/api/word-stats');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Couldn’t load word counts.');
+    setSummary({
+      totals: data.totals || { fileCount: 0, totalWords: 0, jobCount: 0 },
+      byDate: data.byDate || [],
+    });
+  }, []);
+
+  useEffect(() => {
+    load().catch((err) => setError(err.message || 'Couldn’t load word counts.'));
+  }, [load]);
+
+  const removePeriod = async () => {
+    if (!fromDate || !toDate) {
+      setError('Pick a start and end date.');
+      return;
+    }
+    if (!window.confirm(`Delete word counts from ${fromDate} through ${toDate}?`)) return;
+    setBusy(true);
+    setError('');
+    setInfo('');
+    try {
+      const q = `from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`;
+      const res = await api(`/api/word-stats?${q}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Couldn’t delete that period.');
+      setSummary({
+        totals: data.totals || { fileCount: 0, totalWords: 0, jobCount: 0 },
+        byDate: data.byDate || [],
+      });
+      setInfo(`Removed ${data.removed || 0} record(s).`);
+      setFromDate('');
+      setToDate('');
+    } catch (err) {
+      setError(err.message || 'Couldn’t delete that period.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const totals = summary.totals || { fileCount: 0, totalWords: 0, jobCount: 0 };
+
+  return (
+    <section className="card">
+      <h2>Word counts</h2>
+      <p className="sub">
+        Totals from TMS analysis after each translate job — same numbers as Summary (files) and All → Words.
+      </p>
+      {error && <div className="error-banner" style={{ marginBottom: 14 }}>{error}</div>}
+      {info && <div className="info-banner" style={{ marginBottom: 14 }}>{info}</div>}
+
+      <div className="word-stats-totals">
+        <div className="word-stat-pill">
+          <span className="label">All time · files</span>
+          <strong>{totals.fileCount.toLocaleString()}</strong>
+        </div>
+        <div className="word-stat-pill">
+          <span className="label">All time · words</span>
+          <strong>{totals.totalWords.toLocaleString()}</strong>
+        </div>
+        <div className="word-stat-pill">
+          <span className="label">Jobs tracked</span>
+          <strong>{totals.jobCount.toLocaleString()}</strong>
+        </div>
+      </div>
+
+      <div className="word-stats-table-wrap">
+        <table className="word-stats-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Summary (files)</th>
+              <th>Words (All)</th>
+            </tr>
+          </thead>
+          <tbody>
+            {summary.byDate.map((row) => (
+              <tr key={row.date}>
+                <td>{formatStatDate(row.date)}</td>
+                <td>{row.fileCount.toLocaleString()}</td>
+                <td>{row.totalWords.toLocaleString()}</td>
+              </tr>
+            ))}
+            {!summary.byDate.length && (
+              <tr>
+                <td colSpan={3} className="sub">No word counts yet. Run a translate job first.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="word-stats-delete">
+        <h3>Delete a period</h3>
+        <p className="sub">Remove stored counts for jobs created between two dates (inclusive).</p>
+        <div className="word-stats-delete-form">
+          <label className="field">
+            <span>From</span>
+            <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} disabled={busy} />
+          </label>
+          <label className="field">
+            <span>To</span>
+            <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} disabled={busy} />
+          </label>
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={removePeriod}>
+            Delete period
+          </button>
+        </div>
+      </div>
     </section>
   );
 }
@@ -266,9 +846,19 @@ export default function App() {
   const [authRequired, setAuthRequired] = useState(false);
   const [user, setUser] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [showUsers, setShowUsers] = useState(false);
-  const [meta, setMeta] = useState({ languages: [], fileExtensions: [], maxUploadMb: 50 });
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [meta, setMeta] = useState({
+    languages: [],
+    fileExtensions: [],
+    maxUploadMb: 50,
+    customers: [],
+    setups: [],
+    defaultCustomer: 'diaab',
+    defaultSetup: 'diaab',
+  });
+  const [customerId, setCustomerId] = useState('diaab');
   const [metaError, setMetaError] = useState('');
+  const [fileNote, setFileNote] = useState('');
   const [files, setFiles] = useState([]);
   const [sourceLang, setSourceLang] = useState('en');
   const [targetLangs, setTargetLangs] = useState(['ar']);
@@ -277,6 +867,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [run, setRun] = useState(null);
   const [error, setError] = useState('');
+  const [wordQuota, setWordQuota] = useState(null);
   const inputRef = useRef(null);
   const pollRef = useRef(null);
   const targetDropRef = useRef(null);
@@ -293,6 +884,7 @@ export default function App() {
         setAuthRequired(!!data.authRequired);
         setUser(data.user || null);
         setIsAdmin(!!data.isAdmin);
+        setWordQuota(data.wordQuota || null);
       } catch {
         if (!cancelled) setAuthRequired(false);
       } finally {
@@ -300,6 +892,43 @@ export default function App() {
       }
     })();
     return () => { cancelled = true; };
+  }, []);
+
+  // Local: keep server alive while this tab is open; stop it when the tab/window closes.
+  // Grace on the server cancels exit if we come back quickly (refresh / React remount).
+  useEffect(() => {
+    const ping = () => {
+      fetch('/api/heartbeat', { method: 'POST', credentials: 'include', keepalive: true }).catch(() => {});
+    };
+    ping();
+    const id = setInterval(ping, 3000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') ping();
+    };
+    document.addEventListener('visibilitychange', onVis);
+    const shutdown = () => {
+      try {
+        navigator.sendBeacon('/api/shutdown');
+      } catch {
+        fetch('/api/shutdown', { method: 'POST', keepalive: true }).catch(() => {});
+      }
+    };
+    window.addEventListener('pagehide', shutdown);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener('pagehide', shutdown);
+    };
+  }, []);
+
+  const refreshQuota = useCallback(async () => {
+    try {
+      const res = await api('/api/me');
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.wordQuota) setWordQuota(data.wordQuota);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   useEffect(() => {
@@ -316,6 +945,12 @@ export default function App() {
         if (data.error) throw new Error(data.error);
         if (cancelled) return;
         setMeta(data);
+        if (data.wordQuota) setWordQuota(data.wordQuota);
+        const list = data.customers || data.setups || [];
+        const nextId = list.some((s) => s.id === (data.defaultCustomer || data.defaultSetup))
+          ? (data.defaultCustomer || data.defaultSetup)
+          : (list[0]?.id || 'diaab');
+        setCustomerId(nextId);
         const codes = (data.languages || []).map((l) => l.code);
         const src = codes.includes('en') ? 'en' : (codes[0] || 'en');
         setSourceLang(src);
@@ -329,31 +964,7 @@ export default function App() {
         if (!cancelled) setMetaError('Couldn’t load language list. Refresh the page.');
       });
     return () => { cancelled = true; };
-  }, [signedIn]);
-
-  // Keep server alive while this tab is open; shut it down when the tab/browser closes.
-  useEffect(() => {
-    if (!signedIn) return undefined;
-    const ping = () => {
-      api('/api/heartbeat', { method: 'POST', keepalive: true }).catch(() => {});
-    };
-    ping();
-    const id = setInterval(ping, 4000);
-    const shutdown = () => {
-      try {
-        navigator.sendBeacon('/api/shutdown');
-      } catch {
-        api('/api/shutdown', { method: 'POST', keepalive: true }).catch(() => {});
-      }
-    };
-    window.addEventListener('pagehide', shutdown);
-    window.addEventListener('beforeunload', shutdown);
-    return () => {
-      clearInterval(id);
-      window.removeEventListener('pagehide', shutdown);
-      window.removeEventListener('beforeunload', shutdown);
-    };
-  }, [signedIn]);
+  }, [signedIn, showAdmin]);
 
   useEffect(() => () => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -392,31 +1003,50 @@ export default function App() {
   );
 
   const addFiles = useCallback((list) => {
-    const next = Array.from(list).map((file) => ({
-      id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(36).slice(2, 8)}`,
-      name: file.name,
-      size: file.size,
-      file,
-    }));
-    setFiles((prev) => [...prev, ...next]);
-  }, []);
+    const { next, skipped } = checkUploadFiles(list, meta.fileExtensions);
+    if (skipped.length) {
+      setFileNote(`Skipped: ${skipped.join('; ')}`);
+    } else {
+      setFileNote('');
+    }
+    if (next.length) setFiles((prev) => [...prev, ...next]);
+  }, [meta.fileExtensions]);
 
   const onDrop = (e) => {
     e.preventDefault();
     e.currentTarget.classList.remove('drag');
+    if (busy) return;
     if (e.dataTransfer.files?.length) addFiles(e.dataTransfer.files);
   };
 
+  const quotaBlocked = wordQuota && !wordQuota.unlimited && wordQuota.exhausted;
+  const quotaPct = wordQuota && !wordQuota.unlimited && wordQuota.limit
+    ? Math.min(100, Math.round((wordQuota.used / wordQuota.limit) * 100))
+    : 0;
+
   const startTranslate = async () => {
-    if (!files.length || busy) return;
+    if (!files.length || busy || quotaBlocked) return;
+    const checked = checkUploadFiles(files.map((f) => f.file), meta.fileExtensions);
+    if (checked.skipped.length) {
+      setFileNote(`Fix these files first: ${checked.skipped.join('; ')}`);
+      setFiles(checked.next);
+      if (!checked.next.length) return;
+    }
+    const toSend = checked.next.length ? checked.next : files;
+    if (pollRef.current) {
+      clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
     setBusy(true);
     setError('');
     setRun(null);
     try {
       const fd = new FormData();
-      files.forEach((f) => fd.append('files', f.file));
+      toSend.forEach((f) => fd.append('files', f.file));
       fd.append('sourceLang', sourceLang);
       fd.append('targetLangs', JSON.stringify(targetLangs));
+      fd.append('setupId', customerId);
+      fd.append('customerId', customerId);
       const res = await api('/api/translate', { method: 'POST', body: fd });
       const data = await res.json();
       if (res.status === 401) {
@@ -424,7 +1054,10 @@ export default function App() {
         setIsAdmin(false);
         throw new Error('Please sign in.');
       }
-      if (!res.ok) throw new Error(data.error || 'Couldn’t start translation.');
+      if (!res.ok) {
+        if (data.wordQuota) setWordQuota(data.wordQuota);
+        throw new Error(data.error || 'Couldn’t start translation.');
+      }
       setRun(data);
       pollRef.current = setInterval(async () => {
         try {
@@ -444,6 +1077,7 @@ export default function App() {
             clearInterval(pollRef.current);
             pollRef.current = null;
             setBusy(false);
+            refreshQuota();
           }
         } catch (err) {
           clearInterval(pollRef.current);
@@ -462,6 +1096,7 @@ export default function App() {
     setFiles([]);
     setRun(null);
     setError('');
+    setFileNote('');
     setBusy(false);
     if (pollRef.current) {
       clearInterval(pollRef.current);
@@ -478,10 +1113,16 @@ export default function App() {
     }
     setUser(null);
     setIsAdmin(false);
-    setShowUsers(false);
+    setShowAdmin(false);
   };
 
   const translating = busy || (run && run.status === 'processing') || (run && run.status === 'queued');
+  const runInProgress = run && (run.status === 'queued' || run.status === 'processing');
+  const runCompleted = run?.status === 'completed';
+  const smoothProgress = useSmoothProgress(run?.progress, {
+    active: !!runInProgress,
+    done: runCompleted,
+  });
 
   const targetOptions = useMemo(
     () => (meta.languages || []).filter((l) => l.code !== sourceLang),
@@ -519,8 +1160,12 @@ export default function App() {
 
   if (!authReady) {
     return (
-      <div className="app">
-        <p className="footer-note" style={{ marginTop: 48 }}>Loading…</p>
+      <div className="loading-screen" aria-busy="true" aria-label="Loading">
+        <div className="loading-skeleton">
+          <div className="skel lg" />
+          <div className="skel md" />
+          <div className="skel sm" />
+        </div>
       </div>
     );
   }
@@ -533,6 +1178,12 @@ export default function App() {
           setIsAdmin(!!admin);
           setMetaError('');
           setError('');
+          api('/api/me')
+            .then((r) => r.json())
+            .then((data) => {
+              if (data.wordQuota) setWordQuota(data.wordQuota);
+            })
+            .catch(() => {});
         }}
       />
     );
@@ -542,9 +1193,9 @@ export default function App() {
     <div className="app">
       <header className="top">
         <div className="brand">
-          <div className="logo">L</div>
+          <BrandLogo />
           <div>
-            <h1>Locaitra Translate</h1>
+            <h1>Translate</h1>
             <p>Upload a file. Get it translated. Download the result.</p>
           </div>
         </div>
@@ -556,9 +1207,9 @@ export default function App() {
                 type="button"
                 className="btn btn-ghost"
                 style={{ padding: '8px 12px' }}
-                onClick={() => setShowUsers((v) => !v)}
+                onClick={() => setShowAdmin((v) => !v)}
               >
-                {showUsers ? 'Hide users' : 'Manage users'}
+                {showAdmin ? 'Back to translate' : 'Manage'}
               </button>
             )}
             <button type="button" className="btn btn-ghost" style={{ padding: '8px 12px' }} onClick={logout}>
@@ -568,12 +1219,65 @@ export default function App() {
         )}
       </header>
 
-      {showUsers && isAdmin ? (
-        <ManageUsers />
+      {showAdmin && isAdmin ? (
+        <>
+          <ManageWordStats />
+          <ManageCustomers />
+          <ManageUsers />
+        </>
       ) : (
         <>
-      {(error || metaError) && (
-        <div className="error-banner">{error || metaError}</div>
+      {(error || metaError || fileNote) && (
+        <div className="error-banner">{error || metaError || fileNote}</div>
+      )}
+
+      {wordQuota && !wordQuota.unlimited && !isAdmin && (
+        <section className="card quota-card">
+          <h2>Word quota</h2>
+          <p className="sub">
+            {quotaBlocked
+              ? 'You’ve used your word allowance. Contact admin for more.'
+              : `${wordQuota.remaining.toLocaleString()} words left of ${wordQuota.limit.toLocaleString()}.`}
+          </p>
+          <div className="progress-wrap">
+            <div className="progress-label">
+              <span>Used</span>
+              <span>{wordQuota.used.toLocaleString()} / {wordQuota.limit.toLocaleString()}</span>
+            </div>
+            <div className="progress-bar">
+              <i className={quotaBlocked ? 'quota-full' : ''} style={{ width: `${quotaPct}%` }} />
+            </div>
+          </div>
+        </section>
+      )}
+
+      {(meta.customers || meta.setups || []).length > 0 && (
+        <section className="card">
+          <h2>Customer</h2>
+          <p className="sub">
+            {(meta.customers || meta.setups || []).length === 1
+              ? 'This account is set to one customer.'
+              : 'Pick the customer for this job. Each one uses its own saved translations and writing rules.'}
+          </p>
+          <div className="setup-grid">
+            {(meta.customers || meta.setups || []).map((s) => {
+              const on = customerId === s.id;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  className={`setup-option${on ? ' on' : ''}`}
+                  disabled={translating || (meta.customers || meta.setups || []).length === 1}
+                  aria-pressed={on}
+                  onClick={() => setCustomerId(s.id)}
+                >
+                  <strong>{s.name || s.label}</strong>
+                  <span>{s.hint}</span>
+                </button>
+              );
+            })}
+          </div>
+        </section>
       )}
 
       <section className="card">
@@ -712,7 +1416,7 @@ export default function App() {
           <button
             type="button"
             className="btn btn-primary"
-            disabled={!files.length || translating || !targetLangs.length}
+            disabled={!files.length || translating || !targetLangs.length || quotaBlocked}
             onClick={startTranslate}
           >
             {translating ? 'Translating…' : 'Translate'}
@@ -733,9 +1437,9 @@ export default function App() {
           <div className="progress-wrap">
             <div className="progress-label">
               <span>{run.status === 'completed' ? 'Complete' : 'Translating'}</span>
-              <span>{run.progress ?? 0}%</span>
+              <span>{smoothProgress}%</span>
             </div>
-            <div className="progress-bar"><i style={{ width: `${run.progress ?? 0}%` }} /></div>
+            <div className="progress-bar"><i style={{ width: `${smoothProgress}%` }} /></div>
           </div>
 
           <div className="files" style={{ marginTop: 16 }}>
@@ -747,21 +1451,23 @@ export default function App() {
                     <div className="nm">{f.name}</div>
                     <div className="mt">
                       {f.error
-                        || (f.downloads?.length
-                          ? `${f.downloads.length} workflow versions`
-                          : f.downloadName || '—')}
+                        || (run.singleStep
+                          ? (f.downloadName || 'Ready')
+                          : (f.downloads?.length
+                            ? `${f.downloads.length} ${f.downloads.length === 1 ? 'file' : 'versions'}`
+                            : f.downloadName || '—'))}
                     </div>
                   </div>
                   <span className={`status-pill ${f.status}`}>{f.status}</span>
                 </div>
-                {f.status === 'ready' && (f.downloads?.length ? (
+                {f.status === 'ready' && (f.downloads?.length > 1 && !run.singleStep ? (
                   <div className="files" style={{ marginTop: 8, marginLeft: 8 }}>
                     {f.downloads.map((d) => (
                       <div className="file-row" key={d.id}>
                         <div className="file-ic">W{d.step}</div>
                         <div className="file-meta">
                           <div className="nm">{d.name}</div>
-                          <div className="mt">{d.stepName || `Workflow step ${d.step}`}{d.lang ? ` · ${d.lang}` : ''}</div>
+                          <div className="mt">{d.stepName || `Step ${d.step}`}{d.lang ? ` · ${d.lang}` : ''}</div>
                         </div>
                         <a
                           className="btn btn-ghost"
@@ -773,23 +1479,25 @@ export default function App() {
                       </div>
                     ))}
                   </div>
-                ) : (
+                ) : f.status === 'ready' ? (
                   <div className="actions" style={{ marginTop: 8 }}>
                     <a className="btn btn-ghost" style={{ padding: '8px 12px', textDecoration: 'none' }} href={`/api/translate/${run.id}/files/${f.id}/download`}>
                       Download
                     </a>
                   </div>
-                ))}
+                ) : null)}
               </div>
             ))}
           </div>
 
           {run.files?.some((f) => f.status === 'ready') && (
+            (run.files.filter((f) => f.status === 'ready').reduce((n, f) => n + Math.max(f.downloads?.length || 0, 1), 0) > 1) && (
             <div className="actions">
               <a className="btn btn-primary" style={{ textDecoration: 'none' }} href={`/api/translate/${run.id}/download-all`}>
                 Download all
               </a>
             </div>
+            )
           )}
         </section>
       )}
@@ -797,7 +1505,7 @@ export default function App() {
         </>
       )}
 
-      <p className="footer-note">Locaitra Translate</p>
+      <p className="footer-note">LingoTrust Translate</p>
     </div>
   );
 }

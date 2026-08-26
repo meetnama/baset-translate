@@ -1,10 +1,10 @@
-const { PHRASE_FILE_EXTENSIONS, FALLBACK_LANGUAGES } = require('./formats');
+const { TMS_FILE_EXTENSIONS, FALLBACK_LANGUAGES } = require('./formats');
 
 /**
  * Live TMS client. Credentials stay on the server only.
- * Public product UI must never mention the vendor.
+ * Public product UI must never mention the TMS vendor.
  *
- * Supports Phrase Platform access tokens (exchanged for a short-lived JWT)
+ * Supports platform access tokens (exchanged for a short-lived JWT)
  * and legacy ApiToken strings.
  */
 class LiveTmsClient {
@@ -82,8 +82,7 @@ class LiveTmsClient {
     return {
       Authorization: authorization,
       Accept: 'application/json',
-      // Recommended by Phrase TMS API docs
-      'User-Agent': 'Locaitra Translate (projects@locaitra.com)',
+      'User-Agent': 'LingoTrust Translate',
       ...extra,
     };
   }
@@ -154,7 +153,7 @@ class LiveTmsClient {
   }
 
   async listFileExtensions() {
-    return [...PHRASE_FILE_EXTENSIONS];
+    return [...TMS_FILE_EXTENSIONS];
   }
 
   async listMachineTranslateSettings() {
@@ -164,7 +163,7 @@ class LiveTmsClient {
     );
     const list = Array.isArray(data) ? data : data?.content || [];
     return list.map((e) => ({
-      // Phrase preTranslate / mtSettingsPerLanguage resolve by numeric id, not uid.
+      // preTranslate / mtSettingsPerLanguage resolve by numeric id, not uid.
       id: e.id != null ? String(e.id) : null,
       uid: e.uid,
       name: e.name,
@@ -177,19 +176,21 @@ class LiveTmsClient {
     const engines = await this.listMachineTranslateSettings();
     if (!engines.length) return null;
     const engine = engines.find((e) => e.default) || engines[0];
-    // Phrase Language AI only accepts machineTranslateSettings.id (uid is ignored).
+    // Language AI only accepts machineTranslateSettings.id (uid is ignored).
     return engine.id || engine.uid || null;
   }
 
   async createProject({ name, sourceLang, targetLangs, mtUid, templateUid }) {
-    const tpl = templateUid || this.projectTemplateUid;
+    const tpl = templateUid != null && templateUid !== undefined
+      ? String(templateUid).trim()
+      : (this.projectTemplateUid || '');
     const payload = {
       name,
       sourceLang,
       targetLangs,
     };
 
-    // Prefer project template so TMS settings / MT / workflow steps come from Phrase.
+    // Prefer project template so TMS settings / MT / workflow steps come from the template.
     if (tpl) {
       return this._request('POST', `/api2/v2/projects/applyTemplate/${tpl}`, {
         headers: { 'Content-Type': 'application/json' },
@@ -272,6 +273,13 @@ class LiveTmsClient {
     return Array.isArray(data) ? data : data?.content || data?.jobs || [];
   }
 
+  async getJob(projectUid, jobUid) {
+    const pUid = String(projectUid || '').trim();
+    const jUid = String(jobUid || '').trim();
+    if (!pUid || !jUid) throw new Error('projectUid and jobUid required');
+    return this._request('GET', `/api2/v1/projects/${pUid}/jobs/${jUid}`);
+  }
+
   async getProject(projectUid) {
     return this._request('GET', `/api2/v1/projects/${projectUid}`);
   }
@@ -299,6 +307,13 @@ class LiveTmsClient {
       const body = { jobs };
       if (useProjectSettings && !mtUid) {
         body.useProjectPreTranslateSettings = true;
+        // TMS may ignore sibling fields when useProjectPreTranslateSettings is true,
+        // but overwrite must still be requested for later workflow levels.
+        if (overwrite) {
+          body.preTranslateSettings = {
+            overwriteExistingTranslations: true,
+          };
+        }
       } else {
         body.useProjectPreTranslateSettings = false;
         body.preTranslateSettings = {
@@ -391,6 +406,170 @@ class LiveTmsClient {
       }
       return bufferFromResponse(res, jobPartUid);
     }
+  }
+
+  analyseRefOf(row) {
+    return row?.uid || row?.id || row?.analyse?.uid || row?.analyse?.id || null;
+  }
+
+  analysisParts(analysis) {
+    // Phrase returns analyseLanguageParts (British spelling).
+    return (
+      analysis?.analyseLanguageParts ||
+      analysis?.analyzeLanguageParts ||
+      analysis?.analyseLanguagePartDtos ||
+      []
+    );
+  }
+
+  /** Parse TMS analysis v3 — Summary file count + All-row word total. */
+  parseAnalysisSummary(analysis) {
+    const parts = this.analysisParts(analysis);
+    const jobKeys = new Set();
+    const fileNames = new Set();
+    let totalWords = 0;
+
+    for (const part of parts) {
+      const words =
+        part?.data?.all?.words ??
+        part?.data?.All?.words ??
+        part?.all?.words;
+      if (words != null) totalWords += Number(words) || 0;
+      for (const job of part?.jobs || []) {
+        if (job?.jobUid) jobKeys.add(job.jobUid);
+        else if (job?.uid) jobKeys.add(job.uid);
+        if (job?.filename) fileNames.add(job.filename);
+      }
+    }
+
+    const fileCount = jobKeys.size || fileNames.size || (parts.length ? 1 : 0);
+    return {
+      fileCount,
+      totalWords: Math.round(totalWords),
+    };
+  }
+
+  async listProjectAnalyses(projectUid) {
+    const uid = String(projectUid || '').trim();
+    if (!uid) return [];
+    const paths = [
+      `/api2/v3/projects/${uid}/analyses?pageNumber=0&pageSize=50&sort=DATE_CREATED&order=desc`,
+      `/api2/v3/analyses?projectUid=${encodeURIComponent(uid)}&pageNumber=0&pageSize=50`,
+      `/api2/v2/projects/${uid}/analyses?pageNumber=0&pageSize=50`,
+      `/api2/v1/projects/${uid}/analyses?pageNumber=0&pageSize=50`,
+    ];
+    let lastErr = null;
+    for (const apiPath of paths) {
+      try {
+        const data = await this._request('GET', apiPath);
+        const list = Array.isArray(data)
+          ? data
+          : data?.content || data?.analyses || data?.analyseReferences || [];
+        if (!Array.isArray(list)) return [];
+        // Prefer newest when API does not sort.
+        return [...list].sort((a, b) => {
+          const ta = Date.parse(a?.dateCreated || a?.createdAt || '') || 0;
+          const tb = Date.parse(b?.dateCreated || b?.createdAt || '') || 0;
+          return tb - ta;
+        });
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    if (lastErr) throw lastErr;
+    return [];
+  }
+
+  async getAnalysis(analyseRef) {
+    return this._request('GET', `/api2/v3/analyses/${analyseRef}`);
+  }
+
+  /**
+   * Prefer a project analysis if one exists (e.g. UI/APC).
+   * API imports usually create none — then fall back to each job's detail
+   * wordsCount (list jobs omits that field). Do not create a second analysis.
+   * Returns { fileCount, totalWords }.
+   */
+  async runProjectWordAnalysis({
+    projectUid,
+    timeoutMs = 45 * 1000,
+    intervalMs = 2000,
+  } = {}) {
+    const uid = String(projectUid || '').trim();
+    if (!uid) throw new Error('projectUid required for word analysis');
+
+    const start = Date.now();
+    let lastSummary = { fileCount: 0, totalWords: 0 };
+    let sawAnalysis = false;
+
+    while (Date.now() - start < timeoutMs) {
+      const rows = await this.listProjectAnalyses(uid);
+      if (rows.length) {
+        sawAnalysis = true;
+        const newest = rows[0];
+        const ref = this.analyseRefOf(newest);
+        if (ref) {
+          const analysis = await this.getAnalysis(ref);
+          lastSummary = this.parseAnalysisSummary(analysis);
+          const parts = this.analysisParts(analysis);
+          const ready = parts.some((p) => p?.data?.all != null || p?.data?.available === true);
+          if (ready || lastSummary.totalWords > 0) return lastSummary;
+        }
+      }
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+
+    if (sawAnalysis && lastSummary.totalWords > 0) return lastSummary;
+
+    // Fallback: job detail wordsCount (list endpoint has no words field).
+    const fromJobs = await this.wordSummaryFromJobs(uid);
+    if (fromJobs.totalWords > 0 || fromJobs.fileCount > 0) {
+      if (!sawAnalysis) {
+        console.warn(
+          '[tms] no project analysis; using job detail wordsCount instead'
+        );
+      }
+      return fromJobs;
+    }
+
+    if (!sawAnalysis) {
+      throw new Error('Template analysis did not appear on the project in time');
+    }
+    return lastSummary;
+  }
+
+  /**
+   * Source word total from imported jobs. Job list often omits wordsCount —
+   * hydrate each job via getJob. Multi-target: max words per filename.
+   */
+  async wordSummaryFromJobs(projectUid) {
+    const jobs = await this.listProjectJobs(projectUid, { workflowLevel: 1 });
+    const list = Array.isArray(jobs) ? jobs : [];
+    const byFile = new Map();
+
+    for (const job of list) {
+      const jobUid = job?.uid || job?.jobUid;
+      let words = job?.wordsCount ?? job?.wordCount ?? job?.sourceWords;
+      let filename = job?.filename;
+      if ((words == null || words === '') && jobUid) {
+        try {
+          const detail = await this.getJob(projectUid, jobUid);
+          words = detail?.wordsCount ?? detail?.wordCount ?? detail?.sourceWords;
+          filename = filename || detail?.filename;
+        } catch (err) {
+          console.warn('[tms] job detail wordsCount failed:', err.message);
+        }
+      }
+      const key = filename || jobUid || '_';
+      const n = Number(words) || 0;
+      byFile.set(key, Math.max(byFile.get(key) || 0, n));
+    }
+
+    const totalWords = [...byFile.values()].reduce((a, b) => a + b, 0);
+    return {
+      fileCount: byFile.size || (list.length ? 1 : 0),
+      totalWords: Math.round(totalWords),
+    };
   }
 }
 

@@ -5,7 +5,7 @@ const { MockTmsClient } = require('./mock');
 function createTmsClient() {
   if (config.mode === 'live') {
     if (!config.tms.token) {
-      throw new Error('TRANSLATION_MODE=live but PHRASE_API_TOKEN is empty');
+      throw new Error('TRANSLATION_MODE=live but TMS_API_TOKEN is empty');
     }
     return new LiveTmsClient(config.tms);
   }

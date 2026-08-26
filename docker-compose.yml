@@ -1,5 +1,5 @@
 services:
-  locaitra-translate:
+  lingotrust-translate:
     build: .
     ports:
       - "8787:8787"

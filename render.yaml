@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: locaitra-translate
+    name: lingotrust-translate
     runtime: node
     plan: free
     region: frankfurt
@@ -17,5 +17,5 @@ services:
       - key: HOSTED
         value: "true"
       # Add these as secret values in the Render dashboard (do not commit real secrets):
-      # PHRASE_API_TOKEN, PHRASE_AUTH_MODE, PHRASE_OAUTH_URL, PHRASE_BASE_URL,
-      # PHRASE_PROJECT_TEMPLATE_UID, AUTH_ADMIN_USER, AUTH_ADMIN_PASSWORD, AUTH_SECRET
+      # TMS_API_TOKEN, TMS_AUTH_MODE, TMS_OAUTH_URL, TMS_BASE_URL,
+      # TMS_PROJECT_TEMPLATE_UID, TMS_AI_TEMPLATE_UID, AUTH_ADMIN_USER, AUTH_ADMIN_PASSWORD, AUTH_SECRET

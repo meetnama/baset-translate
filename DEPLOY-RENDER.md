@@ -5,16 +5,16 @@ This app is a Node/Express server that serves the built UI from `server/public`.
 ## One-time prep on your PC
 
 1. Create a free GitHub account (if needed): https://github.com/join
-2. Create a **new empty** GitHub repo, e.g. `locaitra-translate` (do **not** upload `.env`)
+2. Create a **new empty** GitHub repo, e.g. `lingotrust-translate` (do **not** upload `.env`)
 3. In PowerShell:
 
 ```powershell
-cd D:\Work\Baset_Tools\locaitra-translate
+cd D:\Work\LingoTrust_Tools\lingotrust-translate
 git init
 git add .
-git commit -m "Prepare Locaitra Translate for Render"
+git commit -m "Prepare LingoTrust Translate for Render"
 git branch -M main
-git remote add origin https://github.com/YOUR_USER/locaitra-translate.git
+git remote add origin https://github.com/YOUR_USER/lingotrust-translate.git
 git push -u origin main
 ```
 
@@ -22,7 +22,7 @@ git push -u origin main
 
 1. Open https://dashboard.render.com and sign up (GitHub login is easiest)
 2. **New → Blueprint** (uses `render.yaml`) **or** **New → Web Service**
-3. Connect the GitHub repo `locaitra-translate`
+3. Connect the GitHub repo `lingotrust-translate`
 4. If manual Web Service (not Blueprint), set:
    - **Build Command:** `npm install --include=dev && npm run build`
    - **Start Command:** `npm start`
@@ -32,11 +32,13 @@ git push -u origin main
 | Key | Example / note |
 |---|---|
 | `TRANSLATION_MODE` | `live` |
-| `PHRASE_API_TOKEN` | your token |
-| `PHRASE_AUTH_MODE` | `platform` |
-| `PHRASE_OAUTH_URL` | `https://eu.phrase.com/idm/oauth/token` |
-| `PHRASE_BASE_URL` | `https://cloud.memsource.com/web` |
-| `PHRASE_PROJECT_TEMPLATE_UID` | your template UID |
+| `TMS_API_TOKEN` | your token |
+| `TMS_AUTH_MODE` | `platform` |
+| `TMS_OAUTH_URL` | IdP token URL for your TMS region |
+| `TMS_BASE_URL` | TMS API root (…/web) |
+| `TMS_PROJECT_TEMPLATE_UID` | 3-step template UID (Full workflow) |
+| `TMS_AI_TEMPLATE_UID` | 1-step AI template UID (optional until you create it) |
+| `TRANSLATION_DEFAULT_SETUP` | `ai` (default) or `workflow` |
 | `AUTH_ADMIN_USER` | `admin` |
 | `AUTH_ADMIN_PASSWORD` | your password (use quotes locally; plain value in Render UI) |
 | `AUTH_SECRET` | long random string |

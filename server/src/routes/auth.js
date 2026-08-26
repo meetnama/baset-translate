@@ -12,6 +12,9 @@ const {
   createUser,
   setUserPassword,
   setUserRole,
+  setUserCustomers,
+  setUserWordQuota,
+  getQuotaStatus,
   deleteUser,
 } = require('../auth');
 
@@ -19,13 +22,14 @@ const router = express.Router();
 
 router.get('/me', (req, res) => {
   if (!authEnabled()) {
-    return res.json({ authRequired: false, user: null, isAdmin: false });
+    return res.json({ authRequired: false, user: null, isAdmin: false, wordQuota: null });
   }
   const { user } = readSession(req);
   res.json({
     authRequired: true,
     user: user || null,
     isAdmin: user ? isAdmin(user) : false,
+    wordQuota: user ? getQuotaStatus(user) : null,
   });
 });
 
@@ -55,6 +59,8 @@ router.post('/users', requireAuth, requireAdmin, (req, res) => {
     username: req.body?.username,
     password: req.body?.password,
     role: req.body?.role,
+    allowedCustomerIds: req.body?.allowedCustomerIds,
+    wordQuota: req.body?.wordQuota,
   });
   if (!result.ok) return res.status(400).json({ error: result.error });
   res.status(201).json(result.user);
@@ -62,15 +68,25 @@ router.post('/users', requireAuth, requireAdmin, (req, res) => {
 
 router.patch('/users/:username', requireAuth, requireAdmin, (req, res) => {
   const username = req.params.username;
-  if (req.body?.password != null && String(req.body.password).length) {
-    const pw = setUserPassword(username, req.body.password);
+  const body = req.body || {};
+
+  if (body.password != null && String(body.password).length) {
+    const pw = setUserPassword(username, body.password);
     if (!pw.ok) return res.status(400).json({ error: pw.error });
   }
-  if (req.body?.role != null) {
-    const role = setUserRole(username, req.body.role);
+  if (body.role != null) {
+    const role = setUserRole(username, body.role);
     if (!role.ok) return res.status(400).json({ error: role.error });
-    return res.json(role.user);
   }
+  if (Object.prototype.hasOwnProperty.call(body, 'allowedCustomerIds')) {
+    const locked = setUserCustomers(username, body.allowedCustomerIds);
+    if (!locked.ok) return res.status(400).json({ error: locked.error });
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'wordQuota')) {
+    const quota = setUserWordQuota(username, body.wordQuota);
+    if (!quota.ok) return res.status(400).json({ error: quota.error });
+  }
+
   const row = listUsers().find((u) => u.username === username);
   if (!row) return res.status(404).json({ error: 'User not found.' });
   res.json(row);

@@ -1,11 +1,11 @@
-# Locaitra Translate
+# LingoTrust Translate
 
 Personal file translation tool: upload → translate → download.
 
 ## Quick start (demo / mock)
 
 ```bash
-cd locaitra-translate
+cd lingotrust-translate
 cp .env.example .env
 # TRANSLATION_MODE=mock is the default — no API key needed
 npm install
@@ -25,21 +25,18 @@ npm start
 
 ## Live translation backend
 
-1. Create a **Platform access token** in Phrase (Profile → Access tokens), scoped for TMS.
+1. Create a **platform access token** in your TMS admin (Profile → Access tokens), scoped for TMS.
 2. Put it in `.env` (server only):
 
 ```env
 TRANSLATION_MODE=live
-PHRASE_API_TOKEN=your_platform_access_token
-PHRASE_AUTH_MODE=platform
-PHRASE_OAUTH_URL=https://eu.phrase.com/idm/oauth/token
-PHRASE_BASE_URL=https://cloud.memsource.com/web
+TMS_API_TOKEN=your_platform_access_token
+TMS_AUTH_MODE=platform
+TMS_OAUTH_URL=<IdP token URL for your TMS region>
+TMS_BASE_URL=<TMS API root …/web>
 ```
 
-The server exchanges the access token for a short-lived JWT automatically (never sent to the browser).
-
-- EU (default): `eu.phrase.com` + `cloud.memsource.com`
-- US: `https://us.phrase.com/idm/oauth/token` and `https://us.cloud.memsource.com/web`
+The server exchanges the access token for a short-lived JWT automatically (never sent to the browser). Set EU or US IdP + TMS hosts together (see `.env.example`).
 
 3. Restart the server. Languages come from the live account.
 
@@ -49,7 +46,7 @@ The server exchanges the access token for a short-lived JWT automatically (never
 
 ```bash
 cp .env.example .env
-# set TRANSLATION_MODE=live and PHRASE_API_TOKEN
+# set TRANSLATION_MODE=live and TMS_API_TOKEN
 docker compose up --build -d
 ```
 
@@ -77,4 +74,4 @@ All import / conversion / machine translation / export work runs on the server a
 
 ## License
 
-Private — LocHere / Locaitra.
+Private — LingoTrust.

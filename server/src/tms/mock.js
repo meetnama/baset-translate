@@ -1,4 +1,4 @@
-const { PHRASE_FILE_EXTENSIONS, FALLBACK_LANGUAGES } = require('./formats');
+const { TMS_FILE_EXTENSIONS, FALLBACK_LANGUAGES } = require('./formats');
 
 /**
  * Mock TMS for local UI demos — same interface as LiveTmsClient.
@@ -14,7 +14,7 @@ class MockTmsClient {
   }
 
   async listFileExtensions() {
-    return [...PHRASE_FILE_EXTENSIONS];
+    return [...TMS_FILE_EXTENSIONS];
   }
 
   async listMachineTranslateSettings() {
@@ -25,13 +25,17 @@ class MockTmsClient {
     return 'mock-mt';
   }
 
-  async createProject({ name, sourceLang, targetLangs, templateUid }) {
+  async createProject({ name, sourceLang, targetLangs, templateUid, setupId, singleStep }) {
+    this._singleStep = Boolean(singleStep) || (setupId !== 'workflow' && setupId !== undefined);
+    if (singleStep === false) this._singleStep = false;
+    this._setupId = this._singleStep ? (setupId || 'diaab') : 'workflow';
     return {
       uid: `mock-proj-${Date.now()}`,
       name,
       sourceLang,
       targetLangs,
       templateUid: templateUid || null,
+      setupId: this._setupId,
     };
   }
 
@@ -48,28 +52,28 @@ class MockTmsClient {
       targetLang: lang,
       filename: fileName,
       status: 'COMPLETED',
-      workflowStep: { name: 'Machine Translation' },
+      workflowStep: { name: this._setupId === 'workflow' ? 'Machine Translation' : 'AI translation' },
       innerId: '1',
     }));
-    this._jobsByLevel = {
-      1: parts,
-      2: this._lastTargets.map((lang, i) => ({
+    this._jobsByLevel = { 1: parts };
+    if (!this._singleStep) {
+      this._jobsByLevel[2] = this._lastTargets.map((lang, i) => ({
         uid: `mock-job-l2-${Date.now()}-${i}`,
         targetLang: lang,
         filename: fileName,
         status: 'NEW',
         workflowStep: { name: 'MT Optimize' },
         innerId: '1',
-      })),
-      3: this._lastTargets.map((lang, i) => ({
+      }));
+      this._jobsByLevel[3] = this._lastTargets.map((lang, i) => ({
         uid: `mock-job-l3-${Date.now()}-${i}`,
         targetLang: lang,
         filename: fileName,
         status: 'NEW',
         workflowStep: { name: 'AI Translate' },
         innerId: '1',
-      })),
-    };
+      }));
+    }
     return {
       asyncRequest: { id: `mock-async-import-${Date.now()}` },
       jobs: parts,
@@ -77,12 +81,17 @@ class MockTmsClient {
   }
 
   async getProject() {
+    if (!this._singleStep) {
+      return {
+        workflowSteps: [
+          { workflowLevel: 1, name: 'Machine Translation', abbreviation: 'MT' },
+          { workflowLevel: 2, name: 'MT Optimize', abbreviation: 'OP' },
+          { workflowLevel: 3, name: 'AI Translate', abbreviation: 'AI' },
+        ],
+      };
+    }
     return {
-      workflowSteps: [
-        { workflowLevel: 1, name: 'Machine Translation', abbreviation: 'MT' },
-        { workflowLevel: 2, name: 'MT Optimize', abbreviation: 'OP' },
-        { workflowLevel: 3, name: 'AI Translate', abbreviation: 'AI' },
-      ],
+      workflowSteps: [{ workflowLevel: 1, name: 'AI translation', abbreviation: 'AI' }],
     };
   }
 
@@ -117,11 +126,74 @@ class MockTmsClient {
       : String(jobPartUid).includes('-l3-')
         ? 'wf3'
         : 'wf1';
-    const content = `Translated by Locaitra (${step})\nSource file: ${base}\nGenerated: ${new Date().toISOString()}\n`;
+    const content = `Translated by LingoTrust Translate (${step})\nSource file: ${base}\nGenerated: ${new Date().toISOString()}\n`;
     return {
       buffer: Buffer.from(content, 'utf8'),
       fileName: withTranslatedSuffix(base),
     };
+  }
+
+  parseAnalysisSummary(analysis) {
+    const parts = analysis?.analyseLanguageParts || [];
+    let totalWords = 0;
+    const fileNames = new Set();
+    for (const part of parts) {
+      totalWords += Number(part?.data?.all?.words) || 0;
+      for (const job of part?.jobs || []) {
+        if (job?.filename) fileNames.add(job.filename);
+      }
+    }
+    return {
+      fileCount: fileNames.size || 1,
+      totalWords: Math.round(totalWords),
+    };
+  }
+
+  async createAnalysis({ jobs, name = 'Default analysis' }) {
+    return {
+      analyses: [{ analyse: { uid: `mock-analyse-${Date.now()}` }, asyncRequest: { id: `mock-async-analyse-${Date.now()}` } }],
+    };
+  }
+
+  async getAnalysis() {
+    const fileName = this._lastFileName || 'sample.txt';
+    const targets = this._lastTargets || ['ar'];
+    return {
+      analyseLanguageParts: targets.map((targetLang) => ({
+        targetLang,
+        jobs: [{ filename: fileName, jobUid: `mock-job-${fileName}` }],
+        data: {
+          all: {
+            words: Math.max(120, Math.round((this._mockWordEstimate || 850) / targets.length)),
+          },
+        },
+      })),
+    };
+  }
+
+  async listProjectAnalyses(_projectUid) {
+    // Templates create analysis on import; mock returns one ready row.
+    return [{ uid: `mock-analyse-${Date.now()}`, dateCreated: new Date().toISOString() }];
+  }
+
+  async wordSummaryFromJobs(_projectUid) {
+    return {
+      fileCount: 1,
+      totalWords: Math.round(this._mockWordEstimate || 850),
+    };
+  }
+
+  async runProjectWordAnalysis({ projectUid, fileName } = {}) {
+    this._mockWordEstimate = Math.max(
+      120,
+      String(fileName || projectUid || 'sample').length * 47
+    );
+    const rows = await this.listProjectAnalyses(projectUid);
+    if (rows.length) {
+      const analysis = await this.getAnalysis(rows[0]?.uid);
+      return this.parseAnalysisSummary(analysis);
+    }
+    return this.wordSummaryFromJobs(projectUid);
   }
 }
 

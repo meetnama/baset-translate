@@ -1,9 +1,8 @@
 /**
- * Canonical file extensions supported by Phrase TMS import.
- * Languages are loaded live from the API; extensions are the published Phrase set
- * (kept in sync with Phrase file-type support docs).
+ * Canonical file extensions supported by TMS import.
+ * Languages are loaded live from the API; extensions match the published TMS set.
  */
-const PHRASE_FILE_EXTENSIONS = [
+const TMS_FILE_EXTENSIONS = [
   // Microsoft Office
   'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'pps', 'ppsx', 'pot', 'potx',
   // OpenOffice / LibreOffice
@@ -54,4 +53,4 @@ const FALLBACK_LANGUAGES = [
   { code: 'th', name: 'Thai' },
 ];
 
-module.exports = { PHRASE_FILE_EXTENSIONS, FALLBACK_LANGUAGES };
+module.exports = { TMS_FILE_EXTENSIONS, FALLBACK_LANGUAGES };

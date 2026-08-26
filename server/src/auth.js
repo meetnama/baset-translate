@@ -5,8 +5,9 @@ const config = require('./config');
 
 const COOKIE_NAME = 'lt_session';
 const usersFile = path.join(config.dataDir, 'users.json');
+const { getUserWordUsage } = require('./services/wordStats');
 
-/** @type {Map<string, { passwordHash: string, role: 'admin' | 'user' }>} */
+/** @type {Map<string, { passwordHash: string, role: 'admin' | 'user', allowedCustomerIds?: string[], wordQuota?: number | null }>} */
 let users = new Map();
 
 function parseLegacyUsers(raw) {
@@ -39,13 +40,38 @@ function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(a, b);
 }
 
+function normalizeAllowed(ids) {
+  if (ids == null) return undefined;
+  if (!Array.isArray(ids)) return undefined;
+  const { getCustomer } = require('./services/customers');
+  const cleaned = [...new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))]
+    .filter((id) => getCustomer(id));
+  return cleaned.length ? cleaned : undefined;
+}
+
+function normalizeWordQuota(value) {
+  if (value == null || value === '') return null;
+  const n = Math.round(Number(value));
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return n;
+}
+
 function persist() {
   fs.mkdirSync(config.dataDir, { recursive: true });
-  const list = [...users.entries()].map(([username, row]) => ({
-    username,
-    passwordHash: row.passwordHash,
-    role: row.role === 'admin' ? 'admin' : 'user',
-  }));
+  const list = [...users.entries()].map(([username, row]) => {
+    const out = {
+      username,
+      passwordHash: row.passwordHash,
+      role: row.role === 'admin' ? 'admin' : 'user',
+    };
+    if (Array.isArray(row.allowedCustomerIds) && row.allowedCustomerIds.length) {
+      out.allowedCustomerIds = row.allowedCustomerIds;
+    }
+    if (row.wordQuota != null && row.wordQuota > 0) {
+      out.wordQuota = row.wordQuota;
+    }
+    return out;
+  });
   fs.writeFileSync(usersFile, JSON.stringify({ users: list }, null, 2), 'utf8');
 }
 
@@ -61,6 +87,8 @@ function loadFromDisk() {
       users.set(username, {
         passwordHash: String(row.passwordHash),
         role: row.role === 'admin' ? 'admin' : 'user',
+        allowedCustomerIds: Array.isArray(row.allowedCustomerIds) ? row.allowedCustomerIds : undefined,
+        wordQuota: row.role === 'admin' ? null : normalizeWordQuota(row.wordQuota),
       });
     }
   } catch (err) {
@@ -81,24 +109,61 @@ function ensureAdminFromEnv() {
     return true;
   }
 
-  // Keep bootstrap admin password in sync with .env (fixes quoting / password changes).
-  if (!verifyPassword(adminPass, existing.passwordHash) || existing.role !== 'admin') {
+  const syncPassword = config.auth.syncAdminPassword;
+
+  // Default: do not overwrite passwords changed in the UI. Opt in via AUTH_ADMIN_SYNC_PASSWORD.
+  if (syncPassword && !verifyPassword(adminPass, existing.passwordHash)) {
     users.set(adminUser, { passwordHash: hashPassword(adminPass), role: 'admin' });
     persist();
-    console.log(`Updated admin user "${adminUser}" from .env`);
+    console.log(`Synced admin password for "${adminUser}" from .env`);
+    return true;
+  }
+
+  if (existing.role !== 'admin') {
+    users.set(adminUser, { ...existing, role: 'admin' });
+    persist();
+    console.log(`Promoted "${adminUser}" to admin from .env`);
   }
   return true;
+}
+
+function ensureTestUserFromEnv() {
+  const u = String(process.env.TEST_USER_USERNAME || '').trim();
+  const p = String(process.env.TEST_USER_PASSWORD || '');
+  if (!u || !p || users.has(u)) return;
+  const quota = normalizeWordQuota(process.env.TEST_USER_WORD_QUOTA) || 5000;
+  const customerIds = String(process.env.TEST_USER_CUSTOMERS || 'normal')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  users.set(u, {
+    passwordHash: hashPassword(p),
+    role: 'user',
+    allowedCustomerIds: normalizeAllowed(customerIds),
+    wordQuota: quota,
+  });
+  persist();
+  console.log(`Created test user "${u}" (word quota ${quota}).`);
 }
 
 function bootstrapUsers() {
   loadFromDisk();
 
-  if (ensureAdminFromEnv()) return;
+  if (ensureAdminFromEnv()) {
+    ensureTestUserFromEnv();
+    return;
+  }
 
-  if (users.size > 0) return;
+  if (users.size > 0) {
+    ensureTestUserFromEnv();
+    return;
+  }
 
   const legacy = parseLegacyUsers(config.auth.users);
-  if (!legacy.size) return;
+  if (!legacy.size) {
+    ensureTestUserFromEnv();
+    return;
+  }
   let first = true;
   for (const [username, password] of legacy.entries()) {
     users.set(username, {
@@ -109,6 +174,7 @@ function bootstrapUsers() {
   }
   persist();
   console.log('Migrated AUTH_USERS into data/users.json (first user is admin).');
+  ensureTestUserFromEnv();
 }
 
 bootstrapUsers();
@@ -125,13 +191,78 @@ function isAdmin(username) {
   return getUserRecord(username)?.role === 'admin';
 }
 
+function publicUser(username, row, { includeUsage = false } = {}) {
+  const out = { username, role: row.role };
+  if (Array.isArray(row.allowedCustomerIds) && row.allowedCustomerIds.length) {
+    out.allowedCustomerIds = row.allowedCustomerIds;
+  } else {
+    out.allowedCustomerIds = null;
+  }
+  if (row.role === 'admin') {
+    out.wordQuota = null;
+  } else if (row.wordQuota != null && row.wordQuota > 0) {
+    out.wordQuota = row.wordQuota;
+  } else {
+    out.wordQuota = null;
+  }
+  if (includeUsage) {
+    const used = getUserWordUsage(username);
+    out.wordsUsed = used;
+    if (out.wordQuota != null) {
+      out.wordsRemaining = Math.max(0, out.wordQuota - used);
+    }
+  }
+  return out;
+}
+
+function getQuotaStatus(username) {
+  const row = getUserRecord(username);
+  if (!row || row.role === 'admin') {
+    return { unlimited: true, limit: null, used: 0, remaining: null, exhausted: false };
+  }
+  const limit = row.wordQuota != null && row.wordQuota > 0 ? row.wordQuota : null;
+  if (limit == null) {
+    return { unlimited: true, limit: null, used: getUserWordUsage(username), remaining: null, exhausted: false };
+  }
+  const used = getUserWordUsage(username);
+  const remaining = Math.max(0, limit - used);
+  return {
+    unlimited: false,
+    limit,
+    used,
+    remaining,
+    exhausted: used >= limit,
+  };
+}
+
+function userQuotaAllowsTranslate(username) {
+  const status = getQuotaStatus(username);
+  return status.unlimited || !status.exhausted;
+}
+
 function listUsers() {
   return [...users.entries()]
-    .map(([username, row]) => ({ username, role: row.role }))
+    .map(([username, row]) => publicUser(username, row, { includeUsage: true }))
     .sort((a, b) => a.username.localeCompare(b.username));
 }
 
-function createUser({ username, password, role = 'user' }) {
+function getAllowedCustomerIds(username) {
+  const row = getUserRecord(username);
+  if (!row) return null;
+  if (row.role === 'admin') return null;
+  return Array.isArray(row.allowedCustomerIds) && row.allowedCustomerIds.length
+    ? row.allowedCustomerIds
+    : null;
+}
+
+function userCanUseCustomer(username, customerId, isAdminUser) {
+  if (isAdminUser) return true;
+  const allowed = getAllowedCustomerIds(username);
+  if (!allowed) return true;
+  return allowed.includes(String(customerId || '').trim());
+}
+
+function createUser({ username, password, role = 'user', allowedCustomerIds, wordQuota }) {
   const u = String(username || '').trim();
   const p = String(password || '');
   const r = role === 'admin' ? 'admin' : 'user';
@@ -141,9 +272,14 @@ function createUser({ username, password, role = 'user' }) {
   }
   if (p.length < 4) return { ok: false, error: 'Password must be at least 4 characters.' };
   if (users.has(u)) return { ok: false, error: 'That username already exists.' };
-  users.set(u, { passwordHash: hashPassword(p), role: r });
+  users.set(u, {
+    passwordHash: hashPassword(p),
+    role: r,
+    allowedCustomerIds: r === 'admin' ? undefined : normalizeAllowed(allowedCustomerIds),
+    wordQuota: r === 'admin' ? null : normalizeWordQuota(wordQuota),
+  });
   persist();
-  return { ok: true, user: { username: u, role: r } };
+  return { ok: true, user: publicUser(u, users.get(u), { includeUsage: true }) };
 }
 
 function setUserPassword(username, password) {
@@ -170,7 +306,42 @@ function setUserRole(username, role) {
   const row = users.get(u);
   users.set(u, { ...row, role: r });
   persist();
-  return { ok: true, user: { username: u, role: r } };
+  return { ok: true, user: publicUser(u, users.get(u), { includeUsage: true }) };
+}
+
+function setUserCustomers(username, allowedCustomerIds) {
+  const u = String(username || '').trim();
+  if (!users.has(u)) return { ok: false, error: 'User not found.' };
+  const row = users.get(u);
+  const nextIds = row.role === 'admin' ? undefined : normalizeAllowed(allowedCustomerIds);
+  users.set(u, { ...row, allowedCustomerIds: nextIds });
+  persist();
+  return { ok: true, user: publicUser(u, users.get(u), { includeUsage: true }) };
+}
+
+function setUserWordQuota(username, wordQuota) {
+  const u = String(username || '').trim();
+  if (!users.has(u)) return { ok: false, error: 'User not found.' };
+  const row = users.get(u);
+  if (row.role === 'admin') {
+    return { ok: false, error: 'Admins have no word quota.' };
+  }
+  users.set(u, { ...row, wordQuota: normalizeWordQuota(wordQuota) });
+  persist();
+  return { ok: true, user: publicUser(u, users.get(u), { includeUsage: true }) };
+}
+
+function stripCustomerFromUsers(customerId) {
+  const id = String(customerId || '').trim();
+  if (!id) return;
+  let changed = false;
+  for (const [username, row] of users.entries()) {
+    if (!Array.isArray(row.allowedCustomerIds) || !row.allowedCustomerIds.includes(id)) continue;
+    const next = row.allowedCustomerIds.filter((x) => x !== id);
+    users.set(username, { ...row, allowedCustomerIds: next.length ? next : undefined });
+    changed = true;
+  }
+  if (changed) persist();
 }
 
 function deleteUser(username, actor) {
@@ -246,10 +417,16 @@ function setSessionCookie(res, username) {
 }
 
 function clearSessionCookie(res) {
-  res.setHeader(
-    'Set-Cookie',
-    `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`
-  );
+  // Must match Secure (and other flags) used when setting, or browsers keep the cookie.
+  const parts = [
+    `${COOKIE_NAME}=`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=0',
+    config.auth.secureCookie ? 'Secure' : '',
+  ].filter(Boolean);
+  res.setHeader('Set-Cookie', parts.join('; '));
 }
 
 function readSession(req) {
@@ -308,6 +485,13 @@ module.exports = {
   createUser,
   setUserPassword,
   setUserRole,
+  setUserCustomers,
+  setUserWordQuota,
+  stripCustomerFromUsers,
+  getAllowedCustomerIds,
+  userCanUseCustomer,
+  getQuotaStatus,
+  userQuotaAllowsTranslate,
   deleteUser,
   COOKIE_NAME,
 };

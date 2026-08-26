@@ -1,8 +1,8 @@
 {
-  "name": "locaitra-translate",
+  "name": "lingotrust-translate",
   "version": "1.0.0",
   "private": true,
-  "description": "Locaitra file translation tool",
+  "description": "LingoTrust Translate — file translation tool",
   "scripts": {
     "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "node --watch server/src/index.js",
