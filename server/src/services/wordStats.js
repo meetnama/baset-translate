@@ -120,6 +120,13 @@ function deleteByDateRange(from, to) {
   return { ok: true, removed };
 }
 
+/** Replace all word-stat rows from a local snapshot. */
+function importWordStatsSnapshot(records) {
+  store.records = Array.isArray(records) ? records.map((row) => ({ ...row })) : [];
+  persist();
+  return { ok: true, count: store.records.length };
+}
+
 loadFromDisk();
 
 module.exports = {
@@ -127,4 +134,5 @@ module.exports = {
   getUserWordUsage,
   listSummary,
   deleteByDateRange,
+  importWordStatsSnapshot,
 };

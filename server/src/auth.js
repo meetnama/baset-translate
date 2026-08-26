@@ -472,6 +472,33 @@ function requireAdmin(req, res, next) {
   return next();
 }
 
+/** Replace all users from a local snapshot (keeps password hashes). */
+function importUsersSnapshot(list) {
+  if (!Array.isArray(list) || !list.length) {
+    return { ok: false, error: 'users array required.' };
+  }
+  const next = new Map();
+  let admins = 0;
+  for (const row of list) {
+    const u = String(row?.username || '').trim();
+    const hash = String(row?.passwordHash || '').trim();
+    if (!u || !hash) continue;
+    const role = row.role === 'admin' ? 'admin' : 'user';
+    if (role === 'admin') admins += 1;
+    next.set(u, {
+      passwordHash: hash,
+      role,
+      allowedCustomerIds: role === 'admin' ? undefined : normalizeAllowed(row.allowedCustomerIds),
+      wordQuota: role === 'admin' ? null : normalizeWordQuota(row.wordQuota),
+    });
+  }
+  if (!next.size) return { ok: false, error: 'No valid users in snapshot.' };
+  if (admins < 1) return { ok: false, error: 'Snapshot must include at least one admin.' };
+  users = next;
+  persist();
+  return { ok: true, count: users.size };
+}
+
 module.exports = {
   authEnabled,
   authenticate,
@@ -493,5 +520,6 @@ module.exports = {
   getQuotaStatus,
   userQuotaAllowsTranslate,
   deleteUser,
+  importUsersSnapshot,
   COOKIE_NAME,
 };

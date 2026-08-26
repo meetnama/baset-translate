@@ -52,11 +52,13 @@ Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
 | `setSessionCookie` / `clearSessionCookie` / `readSession` | Cookie `lt_session` |
 | `requireAuth` / `requireAdmin` | Middleware |
 | `listUsers` / `createUser` / `setUserPassword` / `setUserRole` / `setUserCustomers` / `setUserWordQuota` / `deleteUser` | Admin CRUD |
+| `importUsersSnapshot` | Replace all users from local snapshot (keeps hashes) |
 | `getQuotaStatus` / `userQuotaAllowsTranslate` | Per-user word limit check |
 | `getAllowedCustomerIds` / `userCanUseCustomer` / `stripCustomerFromUsers` | Lock a user to one or more customers |
 | `authEnabled` / `isAdmin` | Gates |
 
-Routes: `server/src/routes/auth.js` → `/me`, `/login`, `/logout`, `/users` CRUD.
+Routes: `server/src/routes/auth.js` → `/me`, `/login`, `/logout`, `/users` CRUD.  
+Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-data`. Script: `scripts/sync-local-data-to-render.js`.
 
 ## Translate routes (`server/src/routes/translate.js`)
 

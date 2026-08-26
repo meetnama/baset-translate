@@ -255,6 +255,22 @@ function deleteCustomer(id) {
   return { ok: true, id: existing.id };
 }
 
+/** Replace all customers from a local snapshot. */
+function importCustomersSnapshot(list) {
+  customers = new Map();
+  if (Array.isArray(list)) {
+    for (const row of list) {
+      const item = normalize(row, { keepId: true });
+      if (item) customers.set(item.id, item);
+    }
+  }
+  if (!customers.size) {
+    for (const row of seedDefaults()) customers.set(row.id, row);
+  }
+  persist();
+  return { ok: true, count: customers.size };
+}
+
 loadFromDisk();
 
 module.exports = {
@@ -268,4 +284,5 @@ module.exports = {
   createCustomer,
   updateCustomer,
   deleteCustomer,
+  importCustomersSnapshot,
 };

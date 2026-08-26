@@ -8,6 +8,7 @@ const authRoutes = require('./routes/auth');
 const translateRoutes = require('./routes/translate');
 const customerRoutes = require('./routes/customers');
 const wordStatsRoutes = require('./routes/wordStats');
+const adminSyncRoutes = require('./routes/adminSync');
 
 fs.mkdirSync(config.dataDir, { recursive: true });
 fs.mkdirSync(config.runsDir, { recursive: true });
@@ -58,9 +59,10 @@ app.use(
     credentials: true,
   })
 );
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '5mb' }));
 
 app.use('/api', authRoutes);
+app.use('/api', adminSyncRoutes);
 
 // Heartbeat/shutdown public so login screen can keep local server alive.
 const publicApi = new Set(['/login', '/logout', '/me', '/health', '/heartbeat', '/shutdown']);

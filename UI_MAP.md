@@ -16,7 +16,7 @@ Styles for all UI live in `client/src/styles.css`. Entry: `client/src/main.jsx` 
 | Manage users panel (list + **Add user** / **Edit** dialog: role, process, word quota) | `App.jsx` (`ManageUsers`, `UserEditorDialog`) | `/api/users*` → `routes/auth.js`, `auth.js` CRUD |
 | **Word quota** card (non-admin users with a limit) | `App.jsx` (translate view); styles `.quota-card` | `/api/me`, `/api/meta` `wordQuota`; blocked at `POST /api/translate` |
 | **Customers** admin list (add/edit/remove, template ID, one pass vs three-step) | `App.jsx` (`ManageCustomers`); styles `.customer-admin-form` `.lock-checks` | `/api/customers*` → `routes/customers.js`, `services/customers.js` |
-| **Word counts** admin (by date, delete period) | `App.jsx` (`ManageWordStats`); styles `.word-stats-table` | `/api/word-stats` → `routes/wordStats.js`, `services/wordStats.js` |
+| Admin import local data (users/customers/word-stats) | `routes/adminSync.js` `POST /api/admin/import-local-data` | `auth.importUsersSnapshot`, `customers.importCustomersSnapshot`, `wordStats.importWordStatsSnapshot` |
 | Error / meta error banner (translate view) | `App.jsx` | `/api/meta`, translate status |
 | **Customer** picker | `App.jsx` (`customerId`); styles `.setup-option` | `GET /api/meta` `customers` → `server/src/services/customers.js` |
 | **Languages** card (From select) | `App.jsx` (`sourceLang`, `setSource`) | `GET /api/meta` → `routes/translate.js` |
