@@ -5,6 +5,7 @@ const config = require('../config');
 const { createTmsClient } = require('../tms');
 const { resolveSetup } = require('./setups');
 const { recordWordStat } = require('./wordStats');
+const { decodeMultipartFilename } = require('../util/filenames');
 
 /** @type {Map<string, object>} */
 const runs = new Map();
@@ -148,7 +149,7 @@ async function createRun({ files, sourceLang, targetLangs, setupId, username }) 
     runDir,
     files: files.map((f) => ({
       id: uuidv4(),
-      name: f.originalname,
+      name: decodeMultipartFilename(f.originalname),
       status: 'queued',
       path: f.path,
       size: f.size,

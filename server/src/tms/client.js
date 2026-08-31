@@ -1,4 +1,5 @@
 const { TMS_FILE_EXTENSIONS, FALLBACK_LANGUAGES } = require('./formats');
+const { decodeMultipartFilename } = require('../util/filenames');
 
 /**
  * Live TMS client. Credentials stay on the server only.
@@ -577,8 +578,22 @@ function bufferFromResponse(res, jobPartUid) {
   return res.arrayBuffer().then((ab) => {
     const buf = Buffer.from(ab);
     const cd = res.headers.get('content-disposition') || '';
-    const match = /filename\*?=(?:UTF-8'')?["']?([^"';]+)/i.exec(cd);
-    const fileName = match ? decodeURIComponent(match[1]) : `translated-${jobPartUid}`;
+    const star = /filename\*\s*=\s*(?:UTF-8''|utf-8'')([^;\s]+)/i.exec(cd);
+    let fileName = null;
+    if (star) {
+      try {
+        fileName = decodeURIComponent(star[1].replace(/["']/g, ''));
+      } catch {
+        fileName = null;
+      }
+    }
+    if (!fileName) {
+      const match = /filename\s*=\s*"([^"]+)"|filename\s*=\s*([^;\s]+)/i.exec(cd);
+      const raw = match ? (match[1] || match[2] || '').trim() : '';
+      fileName = raw
+        ? decodeMultipartFilename(raw)
+        : `translated-${jobPartUid}`;
+    }
     return { buffer: buf, fileName };
   });
 }

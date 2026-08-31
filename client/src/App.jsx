@@ -1092,7 +1092,7 @@ export default function App() {
     }
   };
 
-  const clearAll = () => {
+  const startNewTranslate = () => {
     setFiles([]);
     setRun(null);
     setError('');
@@ -1105,7 +1105,7 @@ export default function App() {
   };
 
   const logout = async () => {
-    clearAll();
+    startNewTranslate();
     try {
       await api('/api/logout', { method: 'POST' });
     } catch {
@@ -1410,13 +1410,10 @@ export default function App() {
         )}
 
         <div className="actions">
-          {files.length > 0 && !translating && (
-            <button type="button" className="btn btn-ghost" onClick={clearAll}>Clear</button>
-          )}
           <button
             type="button"
             className="btn btn-primary"
-            disabled={!files.length || translating || !targetLangs.length || quotaBlocked}
+            disabled={!files.length || translating || !targetLangs.length || quotaBlocked || !!(run && (run.status === 'completed' || run.status === 'failed'))}
             onClick={startTranslate}
           >
             {translating ? 'Translating…' : 'Translate'}
@@ -1490,15 +1487,19 @@ export default function App() {
             ))}
           </div>
 
-          {run.files?.some((f) => f.status === 'ready') && (
-            (run.files.filter((f) => f.status === 'ready').reduce((n, f) => n + Math.max(f.downloads?.length || 0, 1), 0) > 1) && (
-            <div className="actions">
+          <div className="actions" style={{ marginTop: 16 }}>
+            {run.files?.some((f) => f.status === 'ready') &&
+              (run.files.filter((f) => f.status === 'ready').reduce((n, f) => n + Math.max(f.downloads?.length || 0, 1), 0) > 1) && (
               <a className="btn btn-primary" style={{ textDecoration: 'none' }} href={`/api/translate/${run.id}/download-all`}>
                 Download all
               </a>
-            </div>
-            )
-          )}
+            )}
+            {(run.status === 'completed' || run.status === 'failed') && (
+              <button type="button" className="btn btn-primary" onClick={startNewTranslate}>
+                New translate
+              </button>
+            )}
+          </div>
         </section>
       )}
 

@@ -8,6 +8,7 @@ const { createTmsClient } = require('../tms');
 const { createRun, getRun, getRunInternal, isEmptyUploadBuffer } = require('../services/pipeline');
 const { publicForUser, getCustomer } = require('../services/customers');
 const { getAllowedCustomerIds, userCanUseCustomer, userQuotaAllowsTranslate, getQuotaStatus } = require('../auth');
+const { decodeMultipartFilename } = require('../util/filenames');
 
 const router = express.Router();
 
@@ -18,7 +19,8 @@ const storage = multer.diskStorage({
     cb(null, dir);
   },
   filename(req, file, cb) {
-    const safe = file.originalname.replace(/[^\w.\-()+ ]+/g, '_');
+    const display = decodeMultipartFilename(file.originalname);
+    const safe = display.replace(/[^\w.\-()+ ]+/g, '_');
     // Date.now() alone collides when multiple files land in the same millisecond.
     cb(null, `${Date.now()}-${uuidSlice()}-${safe}`);
   },
@@ -72,6 +74,9 @@ router.get('/meta', async (req, res) => {
 
 router.post('/translate', upload.array('files', 20), async (req, res) => {
   const files = req.files || [];
+  for (const f of files) {
+    f.originalname = decodeMultipartFilename(f.originalname);
+  }
   try {
     if (!files.length) {
       return res.status(400).json({ error: 'Please upload at least one file.' });
@@ -209,7 +214,7 @@ router.get('/translate/:id/download-all', (req, res) => {
   if (!entries.length) return res.status(409).json({ error: 'No files ready yet.' });
 
   res.setHeader('Content-Type', 'application/zip');
-  res.setHeader('Content-Disposition', `attachment; filename="locaitra-${run.id.slice(0, 8)}.zip"`);
+  res.setHeader('Content-Disposition', `attachment; filename="lingotrust-${run.id.slice(0, 8)}.zip"`);
   const archive = archiver('zip', { zlib: { level: 9 } });
   archive.on('error', (err) => {
     console.error('zip', err);

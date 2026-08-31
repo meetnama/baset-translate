@@ -24,11 +24,11 @@ Styles for all UI live in `client/src/styles.css`. Entry: `client/src/main.jsx` 
 | **Files** card / dropzone / browse | `App.jsx` (`.drop`, `addFiles`, `onDrop`) | upload via `POST /api/translate` |
 | Format chips preview | `App.jsx` (`previewFormats`) | `meta.fileExtensions` from TMS |
 | File list rows + remove (✕) | `App.jsx` (`files` state) | — |
-| **Clear** button | `App.jsx` (`clearAll`) | — |
-| **Translate** button | `App.jsx` (`startTranslate`) | `POST /api/translate` → `pipeline.js` |
+| **Translate** button | `App.jsx` (`startTranslate`) | `POST /api/translate` → `pipeline.js`; dimmed while translating or after job done until **New translate** |
 | **Progress** card / bar / status pills | `App.jsx` (`run` poll) | `GET /api/translate/:id` |
 | Per-file / per-WF **Download** links | `App.jsx` (download `<a>`) | `GET /api/translate/:id/files/:fileId/download` |
 | **Download all** | `App.jsx` | `GET /api/translate/:id/download-all` (zip) |
+| **New translate** (Progress, after done/fail) | `App.jsx` (`startNewTranslate`) | Clears Progress + files; re-enables Translate |
 | Footer note | `App.jsx` | — |
 | Tab open / close (local) | `App.jsx` (heartbeat + `pagehide`) | `POST /api/heartbeat`, `/api/shutdown` → `server/src/index.js` |
 

@@ -14,7 +14,7 @@ Entry points only. Paths relative to `lingotrust-translate/`. Prefer this over r
 | `App` | Auth gate, translate UI, local heartbeat, polling |
 | `startTranslate` | POST multipart translate + poll status (`customerId`) |
 | `logout` | Clear run + `/api/logout` |
-| `addFiles` / `onDrop` / `clearAll` | File list + empty/type checks |
+| `addFiles` / `onDrop` / `startNewTranslate` | File list + empty/type checks; reset after done job |
 | `checkUploadFiles` | Reject empty / unknown types before send |
 | `setSource` / `toggleTarget` | Language selection |
 | `customerId` | Selected customer (filtered by user lock) |
@@ -65,6 +65,7 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 | Symbol / route | Role |
 |---|---|
 | multer `storage` / `uuidSlice` / `cleanupUploads` | Unique upload names; unlink on fail |
+| `decodeMultipartFilename` (`util/filenames.js`) | Fix UTF-8 upload names (Arabic/CJK/etc.) after multer Latin-1 |
 | `GET /meta` | Languages + extensions + `customers` (filtered by user lock) |
 | `POST /translate` | Start run (`customerId`); reject empty/odd files |
 | `GET /translate/:id` | Poll public run |
