@@ -194,12 +194,13 @@ function LoginScreen({ onLoggedIn }) {
 }
 
 function processIdFromUser(user) {
-  if (!user?.allowedCustomerIds?.length) return 'all';
-  return user.allowedCustomerIds[0];
+  if (!Array.isArray(user?.allowedCustomerIds)) return 'all';
+  return user.allowedCustomerIds[0] || 'none';
 }
 
 function allowedIdsFromProcess(processId) {
   if (!processId || processId === 'all') return null;
+  if (processId === 'none') return [];
   return [processId];
 }
 
@@ -207,6 +208,7 @@ function processLabel(user, customers) {
   if (user.role === 'admin') return 'All processes';
   const id = processIdFromUser(user);
   if (id === 'all') return 'All processes';
+  if (id === 'none') return 'No processes assigned';
   const c = customers.find((x) => x.id === id);
   if (c) return c.mode === 'workflow' ? `${c.name} (three-step)` : `${c.name} (one pass)`;
   return id;
@@ -308,6 +310,7 @@ function UserEditorDialog({
                 <span>Process</span>
                 <select value={processId} onChange={(e) => setProcessId(e.target.value)} disabled={busy}>
                   <option value="all">All processes</option>
+                  <option value="none">No processes assigned</option>
                   {customers.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name} ({c.mode === 'workflow' ? 'three-step' : 'one pass'})

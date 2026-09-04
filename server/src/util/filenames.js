@@ -18,4 +18,18 @@ function decodeMultipartFilename(name) {
   }
 }
 
-module.exports = { decodeMultipartFilename };
+/**
+ * Keeps browser-provided names useful while making them safe as output paths
+ * and ZIP entry names on both Windows and Linux.
+ */
+function safeDownloadFilename(name, fallback = 'translated-file') {
+  const base = decodeMultipartFilename(name)
+    .replace(/^.*[\\/]/, '')
+    .replace(/[\u0000-\u001f<>:"/\\|?*]/g, '_')
+    .replace(/[. ]+$/g, '')
+    .trim();
+  if (!base) return fallback;
+  return base.slice(0, 180);
+}
+
+module.exports = { decodeMultipartFilename, safeDownloadFilename };

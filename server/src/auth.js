@@ -64,7 +64,7 @@ function persist() {
       passwordHash: row.passwordHash,
       role: row.role === 'admin' ? 'admin' : 'user',
     };
-    if (Array.isArray(row.allowedCustomerIds) && row.allowedCustomerIds.length) {
+    if (Array.isArray(row.allowedCustomerIds)) {
       out.allowedCustomerIds = row.allowedCustomerIds;
     }
     if (row.wordQuota != null && row.wordQuota > 0) {
@@ -193,7 +193,7 @@ function isAdmin(username) {
 
 function publicUser(username, row, { includeUsage = false } = {}) {
   const out = { username, role: row.role };
-  if (Array.isArray(row.allowedCustomerIds) && row.allowedCustomerIds.length) {
+  if (Array.isArray(row.allowedCustomerIds)) {
     out.allowedCustomerIds = row.allowedCustomerIds;
   } else {
     out.allowedCustomerIds = null;
@@ -250,16 +250,17 @@ function getAllowedCustomerIds(username) {
   const row = getUserRecord(username);
   if (!row) return null;
   if (row.role === 'admin') return null;
-  return Array.isArray(row.allowedCustomerIds) && row.allowedCustomerIds.length
-    ? row.allowedCustomerIds
-    : null;
+  return Array.isArray(row.allowedCustomerIds) ? row.allowedCustomerIds : null;
+}
+
+function canUseCustomerId(allowedCustomerIds, customerId, isAdminUser = false) {
+  if (isAdminUser) return true;
+  if (!Array.isArray(allowedCustomerIds)) return true;
+  return allowedCustomerIds.includes(String(customerId || '').trim());
 }
 
 function userCanUseCustomer(username, customerId, isAdminUser) {
-  if (isAdminUser) return true;
-  const allowed = getAllowedCustomerIds(username);
-  if (!allowed) return true;
-  return allowed.includes(String(customerId || '').trim());
+  return canUseCustomerId(getAllowedCustomerIds(username), customerId, isAdminUser);
 }
 
 function createUser({ username, password, role = 'user', allowedCustomerIds, wordQuota }) {
@@ -275,7 +276,12 @@ function createUser({ username, password, role = 'user', allowedCustomerIds, wor
   users.set(u, {
     passwordHash: hashPassword(p),
     role: r,
-    allowedCustomerIds: r === 'admin' ? undefined : normalizeAllowed(allowedCustomerIds),
+    allowedCustomerIds:
+      r === 'admin'
+        ? undefined
+        : Array.isArray(allowedCustomerIds)
+          ? (normalizeAllowed(allowedCustomerIds) || [])
+          : undefined,
     wordQuota: r === 'admin' ? null : normalizeWordQuota(wordQuota),
   });
   persist();
@@ -313,7 +319,11 @@ function setUserCustomers(username, allowedCustomerIds) {
   const u = String(username || '').trim();
   if (!users.has(u)) return { ok: false, error: 'User not found.' };
   const row = users.get(u);
-  const nextIds = row.role === 'admin' ? undefined : normalizeAllowed(allowedCustomerIds);
+  const nextIds = row.role === 'admin'
+    ? undefined
+    : Array.isArray(allowedCustomerIds)
+      ? (normalizeAllowed(allowedCustomerIds) || [])
+      : undefined;
   users.set(u, { ...row, allowedCustomerIds: nextIds });
   persist();
   return { ok: true, user: publicUser(u, users.get(u), { includeUsage: true }) };
@@ -338,7 +348,7 @@ function stripCustomerFromUsers(customerId) {
   for (const [username, row] of users.entries()) {
     if (!Array.isArray(row.allowedCustomerIds) || !row.allowedCustomerIds.includes(id)) continue;
     const next = row.allowedCustomerIds.filter((x) => x !== id);
-    users.set(username, { ...row, allowedCustomerIds: next.length ? next : undefined });
+    users.set(username, { ...row, allowedCustomerIds: next });
     changed = true;
   }
   if (changed) persist();
@@ -488,7 +498,12 @@ function importUsersSnapshot(list) {
     next.set(u, {
       passwordHash: hash,
       role,
-      allowedCustomerIds: role === 'admin' ? undefined : normalizeAllowed(row.allowedCustomerIds),
+      allowedCustomerIds:
+        role === 'admin'
+          ? undefined
+          : Array.isArray(row.allowedCustomerIds)
+            ? (normalizeAllowed(row.allowedCustomerIds) || [])
+            : undefined,
       wordQuota: role === 'admin' ? null : normalizeWordQuota(row.wordQuota),
     });
   }
@@ -516,6 +531,7 @@ module.exports = {
   setUserWordQuota,
   stripCustomerFromUsers,
   getAllowedCustomerIds,
+  canUseCustomerId,
   userCanUseCustomer,
   getQuotaStatus,
   userQuotaAllowsTranslate,

@@ -4,6 +4,7 @@
   "private": true,
   "description": "LingoTrust Translate — file translation tool",
   "scripts": {
+    "test": "node --test test/**/*.test.js",
     "dev": "concurrently -n server,client -c magenta,cyan \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "node --watch server/src/index.js",
     "dev:client": "vite --config client/vite.config.js",

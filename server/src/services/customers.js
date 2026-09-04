@@ -165,14 +165,11 @@ function defaultCustomerId() {
 
 function publicForUser({ isAdmin, allowedIds } = {}) {
   const all = listCustomers({ includeDisabled: false });
-  const allowed = Array.isArray(allowedIds)
+  const hasRestriction = !isAdmin && Array.isArray(allowedIds);
+  const allowed = hasRestriction
     ? allowedIds.map((id) => String(id).trim()).filter(Boolean)
     : [];
-  let list = all;
-  if (!isAdmin && allowed.length) {
-    const filtered = all.filter((c) => allowed.includes(c.id));
-    if (filtered.length) list = filtered;
-  }
+  const list = hasRestriction ? all.filter((c) => allowed.includes(c.id)) : all;
   const def = defaultCustomerId();
   const defaultCustomer = list.some((c) => c.id === def) ? def : (list[0]?.id || def);
   return {

@@ -5,9 +5,15 @@ const multer = require('multer');
 const archiver = require('archiver');
 const config = require('../config');
 const { createTmsClient } = require('../tms');
-const { createRun, getRun, getRunInternal, isEmptyUploadBuffer } = require('../services/pipeline');
+const { createRun, getRunInternal, publicRun, canAccessRun, isEmptyUploadBuffer } = require('../services/pipeline');
 const { publicForUser, getCustomer } = require('../services/customers');
-const { getAllowedCustomerIds, userCanUseCustomer, userQuotaAllowsTranslate, getQuotaStatus } = require('../auth');
+const {
+  authEnabled,
+  getAllowedCustomerIds,
+  userCanUseCustomer,
+  userQuotaAllowsTranslate,
+  getQuotaStatus,
+} = require('../auth');
 const { decodeMultipartFilename } = require('../util/filenames');
 
 const router = express.Router();
@@ -39,6 +45,24 @@ function cleanupUploads(files) {
       /* ignore */
     }
   }
+}
+
+function getAccessibleRun(req, res) {
+  const run = getRunInternal(req.params.id);
+  if (!run) {
+    res.status(404).json({ error: 'Not found.' });
+    return null;
+  }
+  if (!canAccessRun(run, {
+    authEnabled: authEnabled(),
+    username: req.user,
+    isAdmin: !!req.isAdmin,
+  })) {
+    // Do not disclose that another user's run exists.
+    res.status(404).json({ error: 'Not found.' });
+    return null;
+  }
+  return run;
 }
 
 const upload = multer({
@@ -163,14 +187,14 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
 });
 
 router.get('/translate/:id', (req, res) => {
-  const run = getRun(req.params.id);
-  if (!run) return res.status(404).json({ error: 'Not found.' });
-  res.json(run);
+  const run = getAccessibleRun(req, res);
+  if (!run) return;
+  res.json(publicRun(run));
 });
 
 router.get('/translate/:id/files/:fileId/download', (req, res) => {
-  const run = getRunInternal(req.params.id);
-  if (!run) return res.status(404).json({ error: 'Not found.' });
+  const run = getAccessibleRun(req, res);
+  if (!run) return;
   const file = run.files.find((f) => f.id === req.params.fileId);
   if (!file || file.status !== 'ready') {
     return res.status(409).json({ error: 'File is not ready yet.' });
@@ -190,8 +214,8 @@ router.get('/translate/:id/files/:fileId/download', (req, res) => {
 });
 
 router.get('/translate/:id/download-all', (req, res) => {
-  const run = getRunInternal(req.params.id);
-  if (!run) return res.status(404).json({ error: 'Not found.' });
+  const run = getAccessibleRun(req, res);
+  if (!run) return;
 
   const singleStep = Boolean(run.singleStep);
   const entries = [];

@@ -5,7 +5,7 @@ const config = require('../config');
 const { createTmsClient } = require('../tms');
 const { resolveSetup } = require('./setups');
 const { recordWordStat } = require('./wordStats');
-const { decodeMultipartFilename } = require('../util/filenames');
+const { decodeMultipartFilename, safeDownloadFilename } = require('../util/filenames');
 
 /** @type {Map<string, object>} */
 const runs = new Map();
@@ -186,6 +186,18 @@ function getRunInternal(id) {
   return runs.get(id) || null;
 }
 
+/**
+ * Runs include uploaded source files and translated output, so they must not be
+ * readable by another signed-in user. Local deployments with authentication
+ * disabled deliberately retain the original shareable behavior.
+ */
+function canAccessRun(run, { authEnabled, username, isAdmin = false } = {}) {
+  if (!run) return false;
+  if (!authEnabled) return true;
+  if (isAdmin) return true;
+  return Boolean(run.username) && run.username === String(username || '').trim();
+}
+
 async function processRun(run) {
   const tms = createTmsClient();
   run.status = 'processing';
@@ -321,8 +333,9 @@ async function processFile(tms, run, file, mtUid, setup) {
       workflowLevels = [1, 2, 3];
     }
 
-    const base = path.parse(file.name).name;
-    const ext = path.parse(file.name).ext || '';
+    const outputFileName = safeDownloadFilename(file.name);
+    const base = path.parse(outputFileName).name;
+    const ext = path.parse(outputFileName).ext || '';
     const saved = [];
 
     for (const level of workflowLevels) {
@@ -437,5 +450,6 @@ module.exports = {
   getRun,
   getRunInternal,
   publicRun,
+  canAccessRun,
   isEmptyUploadBuffer,
 };
