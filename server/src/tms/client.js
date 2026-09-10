@@ -268,10 +268,18 @@ class LiveTmsClient {
   }
 
   async listProjectJobs(projectUid, { workflowLevel } = {}) {
-    let apiPath = `/api2/v2/projects/${projectUid}/jobs?pageNumber=0&pageSize=50`;
-    if (workflowLevel != null) apiPath += `&workflowLevel=${workflowLevel}`;
-    const data = await this._request('GET', apiPath);
-    return Array.isArray(data) ? data : data?.content || data?.jobs || [];
+    const pageSize = 50;
+    const all = [];
+    for (let page = 0; page < 20; page += 1) {
+      let apiPath = `/api2/v2/projects/${projectUid}/jobs?pageNumber=${page}&pageSize=${pageSize}`;
+      if (workflowLevel != null) apiPath += `&workflowLevel=${workflowLevel}`;
+      const data = await this._request('GET', apiPath);
+      const list = Array.isArray(data) ? data : data?.content || data?.jobs || [];
+      if (!list.length) break;
+      all.push(...list);
+      if (list.length < pageSize) break;
+    }
+    return all;
   }
 
   async getJob(projectUid, jobUid) {
@@ -502,11 +510,13 @@ class LiveTmsClient {
     const start = Date.now();
     let lastSummary = { fileCount: 0, totalWords: 0 };
     let sawAnalysis = false;
+    let emptyPolls = 0;
 
     while (Date.now() - start < timeoutMs) {
       const rows = await this.listProjectAnalyses(uid);
       if (rows.length) {
         sawAnalysis = true;
+        emptyPolls = 0;
         const newest = rows[0];
         const ref = this.analyseRefOf(newest);
         if (ref) {
@@ -515,6 +525,13 @@ class LiveTmsClient {
           const parts = this.analysisParts(analysis);
           const ready = parts.some((p) => p?.data?.all != null || p?.data?.available === true);
           if (ready || lastSummary.totalWords > 0) return lastSummary;
+        }
+      } else {
+        emptyPolls += 1;
+        // Normal API jobs usually never get an analysis. Do not stall the run.
+        if (emptyPolls >= 2) {
+          const fromJobs = await this.wordSummaryFromJobs(uid);
+          if (fromJobs.totalWords > 0 || fromJobs.fileCount > 0) return fromJobs;
         }
       }
       await new Promise((r) => setTimeout(r, intervalMs));

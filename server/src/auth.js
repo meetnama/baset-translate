@@ -310,7 +310,11 @@ function setUserRole(username, role) {
     }
   }
   const row = users.get(u);
-  users.set(u, { ...row, role: r });
+  users.set(u, {
+    ...row,
+    role: r,
+    ...(r === 'admin' ? { allowedCustomerIds: undefined, wordQuota: null } : {}),
+  });
   persist();
   return { ok: true, user: publicUser(u, users.get(u), { includeUsage: true }) };
 }
@@ -399,7 +403,12 @@ function getCookie(req, name) {
     if (i < 0) continue;
     const k = part.slice(0, i).trim();
     if (k !== name) continue;
-    return decodeURIComponent(part.slice(i + 1).trim());
+    const raw = part.slice(i + 1).trim();
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
   }
   return null;
 }

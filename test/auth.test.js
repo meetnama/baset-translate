@@ -14,3 +14,8 @@ test('an unrestricted user and an admin can use customers', () => {
   assert.equal(canUseCustomerId(['diaab'], 'normal'), false);
   assert.equal(canUseCustomerId([], 'normal', true), true);
 });
+
+test('an empty customer id is blocked when the user has no assigned processes', () => {
+  assert.equal(canUseCustomerId([], ''), false);
+  assert.equal(canUseCustomerId(null, ''), true);
+});

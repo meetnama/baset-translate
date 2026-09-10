@@ -237,6 +237,20 @@ router.get('/translate/:id/download-all', (req, res) => {
   }
   if (!entries.length) return res.status(409).json({ error: 'No files ready yet.' });
 
+  const usedNames = new Set();
+  const uniqueZipName = (name) => {
+    const raw = String(name || 'translated-file');
+    let candidate = raw;
+    let n = 2;
+    while (usedNames.has(candidate.toLowerCase())) {
+      const parsed = path.parse(raw);
+      candidate = `${parsed.name} (${n})${parsed.ext}`;
+      n += 1;
+    }
+    usedNames.add(candidate.toLowerCase());
+    return candidate;
+  };
+
   res.setHeader('Content-Type', 'application/zip');
   res.setHeader('Content-Disposition', `attachment; filename="lingotrust-${run.id.slice(0, 8)}.zip"`);
   const archive = archiver('zip', { zlib: { level: 9 } });
@@ -247,7 +261,7 @@ router.get('/translate/:id/download-all', (req, res) => {
   });
   archive.pipe(res);
   for (const entry of entries) {
-    archive.file(entry.path, { name: entry.name });
+    archive.file(entry.path, { name: uniqueZipName(entry.name) });
   }
   archive.finalize();
 });

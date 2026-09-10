@@ -289,12 +289,12 @@ function UserEditorDialog({
           <label className="field">
             <span>{mode === 'edit' ? 'New password (optional)' : 'Password'}</span>
             <input
-              type="text"
+              type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={busy}
               required={mode === 'add'}
-              autoComplete="off"
+              autoComplete="new-password"
             />
           </label>
           <label className="field">
@@ -950,9 +950,10 @@ export default function App() {
         setMeta(data);
         if (data.wordQuota) setWordQuota(data.wordQuota);
         const list = data.customers || data.setups || [];
-        const nextId = list.some((s) => s.id === (data.defaultCustomer || data.defaultSetup))
-          ? (data.defaultCustomer || data.defaultSetup)
-          : (list[0]?.id || 'diaab');
+        const preferred = data.defaultCustomer || data.defaultSetup;
+        const nextId = list.some((s) => s.id === preferred)
+          ? preferred
+          : (list[0]?.id || '');
         setCustomerId(nextId);
         const codes = (data.languages || []).map((l) => l.code);
         const src = codes.includes('en') ? 'en' : (codes[0] || 'en');
@@ -1004,6 +1005,8 @@ export default function App() {
     () => (meta.fileExtensions || []).slice(0, 8),
     [meta.fileExtensions]
   );
+  const customerOptions = meta.customers || meta.setups || [];
+  const noCustomer = customerOptions.length === 0;
 
   const addFiles = useCallback((list) => {
     const { next, skipped } = checkUploadFiles(list, meta.fileExtensions);
@@ -1028,7 +1031,7 @@ export default function App() {
     : 0;
 
   const startTranslate = async () => {
-    if (!files.length || busy || quotaBlocked) return;
+    if (!files.length || busy || quotaBlocked || noCustomer || !customerId) return;
     const checked = checkUploadFiles(files.map((f) => f.file), meta.fileExtensions);
     if (checked.skipped.length) {
       setFileNote(`Fix these files first: ${checked.skipped.join('; ')}`);
@@ -1254,23 +1257,28 @@ export default function App() {
         </section>
       )}
 
-      {(meta.customers || meta.setups || []).length > 0 && (
+      {noCustomer ? (
+        <section className="card">
+          <h2>Customer</h2>
+          <p className="sub">No process is assigned to this account. Ask an admin to assign one before you translate.</p>
+        </section>
+      ) : (
         <section className="card">
           <h2>Customer</h2>
           <p className="sub">
-            {(meta.customers || meta.setups || []).length === 1
+            {customerOptions.length === 1
               ? 'This account is set to one customer.'
               : 'Pick the customer for this job. Each one uses its own saved translations and writing rules.'}
           </p>
           <div className="setup-grid">
-            {(meta.customers || meta.setups || []).map((s) => {
+            {customerOptions.map((s) => {
               const on = customerId === s.id;
               return (
                 <button
                   key={s.id}
                   type="button"
                   className={`setup-option${on ? ' on' : ''}`}
-                  disabled={translating || (meta.customers || meta.setups || []).length === 1}
+                  disabled={translating || customerOptions.length === 1}
                   aria-pressed={on}
                   onClick={() => setCustomerId(s.id)}
                 >
@@ -1416,7 +1424,7 @@ export default function App() {
           <button
             type="button"
             className="btn btn-primary"
-            disabled={!files.length || translating || !targetLangs.length || quotaBlocked || !!(run && (run.status === 'completed' || run.status === 'failed'))}
+            disabled={!files.length || translating || !targetLangs.length || quotaBlocked || noCustomer || !customerId || !!(run && (run.status === 'completed' || run.status === 'failed'))}
             onClick={startTranslate}
           >
             {translating ? 'Translating…' : 'Translate'}

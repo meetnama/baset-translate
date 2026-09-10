@@ -19,6 +19,7 @@ Styles for all UI live in `client/src/styles.css`. Entry: `client/src/main.jsx` 
 | Admin import local data (users/customers/word-stats) | `routes/adminSync.js` `POST /api/admin/import-local-data` | `auth.importUsersSnapshot`, `customers.importCustomersSnapshot`, `wordStats.importWordStatsSnapshot` |
 | Error / meta error banner (translate view) | `App.jsx` | `/api/meta`, translate status |
 | **Customer** picker | `App.jsx` (`customerId`); styles `.setup-option` | `GET /api/meta` `customers` → `server/src/services/customers.js` |
+| No process assigned (empty customer list) | `App.jsx` (`noCustomer`) | Translate disabled until admin assigns a process |
 | **Languages** card (From select) | `App.jsx` (`sourceLang`, `setSource`) | `GET /api/meta` → `routes/translate.js` |
 | **To** multi-select (trigger, search, checkboxes) | `App.jsx` (`targetLangs`, multi-select) | same `/api/meta` languages |
 | **Files** card / dropzone / browse | `App.jsx` (`.drop`, `addFiles`, `onDrop`) | upload via `POST /api/translate` |

@@ -293,26 +293,6 @@ async function processFile(tms, run, file, mtUid, setup) {
       jobUids = collectJobUids(null, null, listedJobs);
     }
 
-    try {
-      if (typeof tms.runProjectWordAnalysis === 'function') {
-        // Templates create analysis on import — read that, do not create another.
-        const summary = await tms.runProjectWordAnalysis({ projectUid });
-        recordWordStat({
-          runId: run.id,
-          projectUid,
-          projectName,
-          createdAt: run.createdAt,
-          customerId: setup?.id,
-          username: run.username,
-          fileName: file.name,
-          fileCount: summary.fileCount || 1,
-          totalWords: summary.totalWords,
-        });
-      }
-    } catch (err) {
-      console.warn('[pipeline] word count analysis failed:', err.message);
-    }
-
     let workflowLevels = [1];
     if (setup?.singleStep) {
       workflowLevels = [1];
@@ -419,6 +399,26 @@ async function processFile(tms, run, file, mtUid, setup) {
 
     if (!saved.length) {
       throw new Error('No workflow-step downloads produced');
+    }
+
+    try {
+      if (typeof tms.runProjectWordAnalysis === 'function') {
+        // Count words only after a successful download so failed jobs do not eat quota.
+        const summary = await tms.runProjectWordAnalysis({ projectUid });
+        recordWordStat({
+          runId: run.id,
+          projectUid,
+          projectName,
+          createdAt: run.createdAt,
+          customerId: setup?.id,
+          username: run.username,
+          fileName: file.name,
+          fileCount: summary.fileCount || 1,
+          totalWords: summary.totalWords,
+        });
+      }
+    } catch (err) {
+      console.warn('[pipeline] word count analysis failed:', err.message);
     }
 
     if (setup?.singleStep && saved.length > 1) {

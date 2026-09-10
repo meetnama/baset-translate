@@ -108,7 +108,7 @@ Routes: `server/src/routes/customers.js` → `/customers` CRUD (admin).
 
 Routes: `server/src/routes/wordStats.js` → `GET/DELETE /word-stats` (admin).
 
-Pipeline: after job import, poll project analysis via `runProjectWordAnalysis({ projectUid })` (fallback: `getJob` detail `wordsCount` — list omits it) → `recordWordStat`. Does **not** create a second analysis.
+Pipeline: after a successful download, poll project analysis via `runProjectWordAnalysis({ projectUid })` (fallback: `getJob` detail `wordsCount` — list omits it) → `recordWordStat`. Failed files are not counted. Does **not** create a second analysis.
 
 ## Translation setups (`server/src/services/setups.js`)
 
@@ -125,7 +125,7 @@ Thin re-export of `customers.js` (`resolveSetup`, `publicSetups`).
 
 ### `LiveTmsClient` methods (same interface on mock)
 
-`ping`, `listLanguages`, `listFileExtensions`, `listMachineTranslateSettings`, `getDefaultMtUid`, `createProject`, `setProjectMtSettings`, `createJob`, `getAsync`, `waitAsync`, `listProjectJobs`, `getProject`, `setProjectMtEngine`, `preTranslate`, `setJobsStatus`, `downloadTarget`, `listProjectAnalyses`, `getAnalysis`, `getJob`, `runProjectWordAnalysis` (poll analysis, else job-detail `wordsCount`), `parseAnalysisSummary` (+ private `_ensureAuthHeader`, `_headers`, `_request`).
+`ping`, `listLanguages`, `listFileExtensions`, `listMachineTranslateSettings`, `getDefaultMtUid`, `createProject`, `setProjectMtSettings`, `createJob`, `getAsync`, `waitAsync`, `listProjectJobs` (pages of 50), `getProject`, `setProjectMtEngine`, `preTranslate`, `setJobsStatus`, `downloadTarget`, `listProjectAnalyses`, `getAnalysis`, `getJob`, `runProjectWordAnalysis` (analysis if present; else job-detail `wordsCount` without a long empty wait), `parseAnalysisSummary` (+ private `_ensureAuthHeader`, `_headers`, `_request`).
 
 ## Deploy / ops (docs, not runtime)
 
