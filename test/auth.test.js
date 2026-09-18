@@ -78,6 +78,13 @@ test('estimateUploadWords counts text files', () => {
   assert.equal(estimateUploadWords(buf, 'a.txt'), 4);
 });
 
+test('estimateUploadWords returns a size-based ceiling for binary uploads', () => {
+  const buf = Buffer.alloc(5000, 1);
+  const n = estimateUploadWords(buf, 'doc.docx');
+  assert.equal(typeof n, 'number');
+  assert.ok(n >= 100);
+});
+
 test('login rate limit locks after repeated failures', () => {
   _resetLoginRateLimitForTests();
   const req = { headers: {}, socket: { remoteAddress: '203.0.113.9' } };

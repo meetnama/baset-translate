@@ -81,7 +81,7 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 |---|---|
 | `createRun` | Queue run, kick `processRun`; stores `quotaRemainingAtStart` |
 | `getRun` / `getRunInternal` / `publicRun` | Status for API |
-| `processRun` / `processFile` | Customer template; one-pass = 1 download; Full workflow = 3-step; post-analysis quota withhold; download leak scan |
+| `processRun` / `processFile` | Customer template; one-pass = 1 download; Full workflow = 3-step; word-count gate before MT; download leak scan |
 | `publicDownloads` | Hide extra step files for one-pass jobs |
 | `projectDateTimeName` | Unique TMS project names |
 | `pruneOldRuns` | Drop finished runs after 6h |

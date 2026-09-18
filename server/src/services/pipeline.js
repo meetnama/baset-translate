@@ -323,6 +323,29 @@ async function processFile(tms, run, file, mtUid, setup) {
       workflowLevels = [1, 2, 3];
     }
 
+    // Real word count from import — stop before Agent/MT if over remaining quota.
+    let precheckWords = null;
+    const remainingCap =
+      run.quotaRemainingAtStart != null
+        ? run.quotaRemainingAtStart
+        : run.username
+          ? getQuotaStatus(run.username).remaining
+          : null;
+    const quotaStatus = run.username ? getQuotaStatus(run.username) : { unlimited: true };
+    if (!quotaStatus.unlimited && remainingCap != null && typeof tms.runProjectWordAnalysis === 'function') {
+      try {
+        const summary = await tms.runProjectWordAnalysis({ projectUid });
+        precheckWords = Number(summary.totalWords) || 0;
+      } catch (err) {
+        console.warn('[pipeline] pre-translate word count failed:', err.message);
+      }
+      if (precheckWords != null && precheckWords > remainingCap) {
+        throw new Error(
+          `This file is ${precheckWords.toLocaleString()} words, over your remaining quota (${Number(remainingCap).toLocaleString()} left). Contact admin for more.`
+        );
+      }
+    }
+
     const outputFileName = safeDownloadFilename(file.name);
     const base = path.parse(outputFileName).name;
     const ext = path.parse(outputFileName).ext || '';
@@ -415,13 +438,27 @@ async function processFile(tms, run, file, mtUid, setup) {
       throw new Error('No workflow-step downloads produced');
     }
 
-    let analysisWords = null;
+    // Record usage only after a successful download (failed / over-quota starts do not count).
     try {
       if (typeof tms.runProjectWordAnalysis === 'function') {
-        // Count words only after a successful download so failed jobs do not eat quota.
         const summary = await tms.runProjectWordAnalysis({ projectUid });
-        analysisWords = Number(summary.totalWords) || 0;
-
+        const words = Number(summary.totalWords) || precheckWords || 0;
+        if (
+          !quotaStatus.unlimited &&
+          remainingCap != null &&
+          words > remainingCap
+        ) {
+          for (const d of saved) {
+            try {
+              fs.unlinkSync(d.path);
+            } catch {
+              /* ignore */
+            }
+          }
+          throw new Error(
+            `This file is ${words.toLocaleString()} words, over your remaining quota (${Number(remainingCap).toLocaleString()} left). Contact admin for more.`
+          );
+        }
         recordWordStat({
           runId: run.id,
           projectUid,
@@ -431,29 +468,8 @@ async function processFile(tms, run, file, mtUid, setup) {
           username: run.username,
           fileName: file.name,
           fileCount: summary.fileCount || 1,
-          totalWords: summary.totalWords,
+          totalWords: summary.totalWords ?? words,
         });
-
-        // Post-analysis quota: withhold delivery if this file alone exceeds remaining at start.
-        const remainingCap =
-          run.quotaRemainingAtStart != null
-            ? run.quotaRemainingAtStart
-            : run.username
-              ? getQuotaStatus(run.username).remaining
-              : null;
-        const quota = run.username ? getQuotaStatus(run.username) : { unlimited: true };
-        if (!quota.unlimited && remainingCap != null && analysisWords > remainingCap) {
-          for (const d of saved) {
-            try {
-              fs.unlinkSync(d.path);
-            } catch {
-              /* ignore */
-            }
-          }
-          throw new Error(
-            `This file is ${analysisWords.toLocaleString()} words, over your remaining quota (${Number(remainingCap).toLocaleString()} left). Contact admin for more.`
-          );
-        }
       }
     } catch (err) {
       if (

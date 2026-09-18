@@ -180,25 +180,20 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
       });
     }
 
-    // Early quota gate when we can estimate (text-like files). Binary uses post-analysis check.
+    // Early quota gate: refuse clearly oversized uploads before starting a run.
     if (req.user) {
       const q = getQuotaStatus(req.user);
       if (!q.unlimited && q.remaining != null) {
         let estimated = 0;
-        let anyEstimate = false;
         for (const f of files) {
           try {
             const buf = fs.readFileSync(f.path);
-            const n = estimateUploadWords(buf, f.originalname);
-            if (n != null) {
-              anyEstimate = true;
-              estimated += n;
-            }
+            estimated += estimateUploadWords(buf, f.originalname) || 0;
           } catch {
             /* skip */
           }
         }
-        if (anyEstimate && estimated > q.remaining) {
+        if (estimated > q.remaining) {
           cleanupUploads(files);
           return res.status(403).json({
             error: `This upload looks larger than your remaining word quota (${estimated.toLocaleString()} estimated vs ${q.remaining.toLocaleString()} left). Contact admin for more.`,

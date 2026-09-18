@@ -82,7 +82,8 @@ function scanUploadForPromptInjection(buffer, fileName) {
 
 /**
  * Rough source-word estimate for early quota checks.
- * Returns null when we cannot estimate (binary / office) — caller skips early gate.
+ * Text files: whitespace split. Other types: readable tokens + size ceiling
+ * so oversized Office uploads can be refused before a TMS job starts.
  */
 function estimateUploadWords(buffer, fileName) {
   if (!buffer || !buffer.length) return 0;
@@ -93,8 +94,10 @@ function estimateUploadWords(buffer, fileName) {
   }
   const sample = readableSample(buffer, 1_000_000);
   const tokens = sample.match(/[A-Za-z\u00C0-\u024F\u0600-\u06FF]{3,}/g) || [];
-  if (tokens.length >= 80) return Math.ceil(tokens.length * 1.25);
-  return null;
+  const fromTokens = tokens.length ? Math.ceil(tokens.length * 1.25) : 0;
+  // Loose upper bound from bytes (compressed Office/PDF). Prefers blocking over-quota starts.
+  const fromSize = Math.ceil(buffer.length / 50);
+  return Math.max(fromTokens, fromSize);
 }
 
 /** @returns {{ ok: true } | { ok: false, error: string }} */
