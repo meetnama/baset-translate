@@ -1,6 +1,6 @@
 /**
  * Lightweight guards around TMS Agent prompt injection via file content.
- * Does not replace TMS-side hardening; catches common text patterns only.
+ * Does not replace TMS-side hardening; catches common attack patterns from pentests.
  */
 
 const INJECTION_PATTERNS = [
@@ -10,20 +10,34 @@ const INJECTION_PATTERNS = [
   /reveal\s+(your\s+)?(system\s+)?prompt/i,
   /show\s+(me\s+)?(the\s+)?system\s+prompt/i,
   /print\s+(your\s+)?(system\s+)?prompt/i,
+  /output\s+all\s+the\s+lines\s+of\s+your\s+system\s+prompt/i,
+  /system\s+prompt/i,
   /<\/?\s*glossary\s*>/i,
   /<\/?\s*system\s*>/i,
   /<\/?\s*instructions?\s*>/i,
   /\bDAN\s+mode\b/i,
   /override\s+(your\s+)?(safety|system)\b/i,
+  // Zerosploit-style delimiter breakout + fake system orders
+  /system\s*:\s*(append|output|ignore|disregard|reveal|show|print|translate)/i,
+  /append\s+the\s+word\s+PWNED/i,
+  /\bPWNED\b/i,
+  // Arabic “System: append the word PWNED…”
+  /النظام\s*:\s*ألحق/,
+  /ألحق\s+كلمة\s+PWNED/,
 ];
 
 const LEAK_PATTERNS = [
   /system\s+prompt\s*:/i,
   /you\s+are\s+an?\s+ai\s+translation/i,
+  /you\s+are\s+a\s+machine\s+translation\s+system/i,
+  /IMPORTANT\s+RULES\s*:/i,
+  /Output\s+ONLY\s+the\s+translation/i,
+  /Never\s+explain,\s*refuse,\s*or\s+add\s+commentary/i,
   /available\s+tools?\s*:/i,
   /network[- ]capable/i,
   /here\s+is\s+(my|the)\s+system\s+prompt/i,
   /\bPWNED\b/,
+  /<\/?\s*glossary\s*>/i,
 ];
 
 const TEXT_EXTS = new Set([
@@ -41,7 +55,8 @@ function fileExt(name) {
 function readableSample(buffer, max = 500_000) {
   if (!buffer || !buffer.length) return '';
   const slice = buffer.subarray(0, Math.min(buffer.length, max));
-  return slice.toString('utf8');
+  // Normalize literal "\n" sequences often used in injection PoCs pasted as text.
+  return slice.toString('utf8').replace(/\\n/g, '\n');
 }
 
 function findMatchingPattern(text, patterns) {
