@@ -263,14 +263,98 @@ function userCanUseCustomer(username, customerId, isAdminUser) {
   return canUseCustomerId(getAllowedCustomerIds(username), customerId, isAdminUser);
 }
 
-/** New / changed passwords: 8+ chars with at least one letter and one number. */
+/** Common / trivial passwords (lowercase). Blocked even if they meet shape rules. */
+const COMMON_PASSWORDS = new Set(
+  [
+    '0000',
+    '1234',
+    '12345',
+    '123456',
+    '1234567',
+    '12345678',
+    '123456789',
+    '1234567890',
+    'password',
+    'password1',
+    'password12',
+    'password123',
+    'password123!',
+    'passw0rd',
+    'passw0rd!',
+    'qwerty',
+    'qwerty1',
+    'qwerty12',
+    'qwerty123',
+    'qwerty123!',
+    'admin',
+    'admin123',
+    'admin123!',
+    'welcome',
+    'welcome1',
+    'welcome12',
+    'welcome123',
+    'welcome123!',
+    'letmein',
+    'letmein1',
+    'letmein12',
+    'letmein123',
+    'monkey',
+    'dragon',
+    'master',
+    'login',
+    'abc123',
+    'abc12345',
+    'abcd1234',
+    'abcd1234!',
+    'changeme',
+    'changeme1',
+    'changeme!',
+    'iloveyou',
+    'sunshine',
+    'princess',
+    'football',
+    'baseball',
+    'mustang',
+    'access',
+    'shadow',
+    'trustno1',
+    'pass1234',
+    'pass1234!',
+    'p@ssw0rd',
+    'p@ssword',
+    'p@ssword1',
+  ].map((s) => s.toLowerCase())
+);
+
+/**
+ * New / changed passwords: 8+ chars, upper+lower, number, special char,
+ * and not on the common-password list.
+ */
 function validatePasswordStrength(password) {
   const p = String(password || '');
   if (p.length < 8) {
     return { ok: false, error: 'Password must be at least 8 characters.' };
   }
-  if (!/[A-Za-z]/.test(p) || !/[0-9]/.test(p)) {
-    return { ok: false, error: 'Password must include letters and numbers.' };
+  if (!/[a-z]/.test(p) || !/[A-Z]/.test(p)) {
+    return {
+      ok: false,
+      error: 'Password must include both uppercase and lowercase letters.',
+    };
+  }
+  if (!/[0-9]/.test(p)) {
+    return { ok: false, error: 'Password must include a number.' };
+  }
+  if (!/[^A-Za-z0-9]/.test(p)) {
+    return {
+      ok: false,
+      error: 'Password must include a special character (e.g. ! @ # $).',
+    };
+  }
+  if (COMMON_PASSWORDS.has(p.toLowerCase())) {
+    return {
+      ok: false,
+      error: 'This password is too common. Choose something harder to guess.',
+    };
   }
   return { ok: true };
 }

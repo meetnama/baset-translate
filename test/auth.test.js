@@ -13,6 +13,8 @@ const {
   recordLoginSuccess,
   _resetLoginRateLimitForTests,
   MAX_FAILURES,
+  BURST_MAX,
+  progressiveDelayMs,
 } = require('../server/src/util/loginRateLimit');
 const { createCorsOriginChecker, parseAllowList } = require('../server/src/util/corsAllowlist');
 
@@ -33,12 +35,18 @@ test('an empty customer id is blocked when the user has no assigned processes', 
   assert.equal(canUseCustomerId(null, ''), true);
 });
 
-test('password policy requires 8+ chars with letters and numbers', () => {
+test('password policy requires 8+ mixed case, number, special, and not common', () => {
   assert.equal(validatePasswordStrength('0000').ok, false);
   assert.equal(validatePasswordStrength('password').ok, false);
   assert.equal(validatePasswordStrength('pass12').ok, false);
-  assert.equal(validatePasswordStrength('password1').ok, true);
-  assert.equal(validatePasswordStrength('Abcd1234').ok, true);
+  assert.equal(validatePasswordStrength('password1').ok, false);
+  assert.equal(validatePasswordStrength('Abcd1234').ok, false); // no special
+  assert.equal(validatePasswordStrength('abcd1234!').ok, false); // no upper
+  assert.equal(validatePasswordStrength('ABCD1234!').ok, false); // no lower
+  assert.equal(validatePasswordStrength('Abcdabcd!').ok, false); // no number
+  assert.equal(validatePasswordStrength('Abcd1234!').ok, false); // common
+  assert.equal(validatePasswordStrength('Tr0ub4dor!x').ok, true);
+  assert.equal(validatePasswordStrength('Lingo#Trust9').ok, true);
 });
 
 test('prompt injection scan rejects common instruction overrides', () => {
@@ -85,18 +93,53 @@ test('estimateUploadWords returns a size-based ceiling for binary uploads', () =
   assert.ok(n >= 100);
 });
 
-test('login rate limit locks after repeated failures', () => {
+test('login progressive delay grows after each failure', () => {
   _resetLoginRateLimitForTests();
-  const req = { headers: {}, socket: { remoteAddress: '203.0.113.9' } };
+  assert.equal(progressiveDelayMs(1), 1000);
+  assert.equal(progressiveDelayMs(2), 2000);
+  assert.equal(progressiveDelayMs(3), 4000);
+  assert.equal(progressiveDelayMs(10), 32000);
+
+  const req = { headers: {}, socket: { remoteAddress: '203.0.113.21' } };
+  assert.equal(assertLoginAllowed(req, 'bob').ok, true);
+  recordLoginFailure(req, 'bob');
+  const delayed = assertLoginAllowed(req, 'bob');
+  assert.equal(delayed.ok, false);
+  assert.match(delayed.error, /wait/i);
+  assert.ok(delayed.retryAfterSec >= 1);
+});
+
+test('login hard-locks after max failures once delays are cleared', () => {
+  _resetLoginRateLimitForTests();
+  // Failures on distinct IPs still accumulate on the shared username bucket.
   for (let i = 0; i < MAX_FAILURES; i++) {
-    assert.equal(assertLoginAllowed(req, 'alice').ok, true);
-    recordLoginFailure(req, 'alice');
+    recordLoginFailure(
+      { headers: {}, socket: { remoteAddress: `203.0.113.${30 + i}` } },
+      'carol'
+    );
   }
-  const blocked = assertLoginAllowed(req, 'alice');
+  const blocked = assertLoginAllowed(
+    { headers: {}, socket: { remoteAddress: '203.0.113.99' } },
+    'carol'
+  );
   assert.equal(blocked.ok, false);
   assert.match(blocked.error, /Too many failed/i);
-  recordLoginSuccess(req, 'alice');
-  assert.equal(assertLoginAllowed(req, 'alice').ok, true);
+  recordLoginSuccess({ headers: {}, socket: { remoteAddress: '203.0.113.99' } }, 'carol');
+  assert.equal(
+    assertLoginAllowed({ headers: {}, socket: { remoteAddress: '203.0.113.100' } }, 'carol').ok,
+    true
+  );
+});
+
+test('login burst cap blocks too many attempts per minute', () => {
+  _resetLoginRateLimitForTests();
+  const req = { headers: {}, socket: { remoteAddress: '198.51.100.7' } };
+  let last = { ok: true };
+  for (let i = 0; i < BURST_MAX + 2; i++) {
+    last = assertLoginAllowed(req, 'dave');
+  }
+  assert.equal(last.ok, false);
+  assert.match(last.error, /Too many sign-in attempts/i);
 });
 
 test('CORS allow-list does not reflect unknown origins', async () => {

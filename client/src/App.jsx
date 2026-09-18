@@ -37,6 +37,88 @@ async function api(url, options = {}) {
   return res;
 }
 
+/** Keep in sync with server `validatePasswordStrength` in auth.js */
+const COMMON_PASSWORDS = new Set(
+  [
+    '0000',
+    '1234',
+    '12345',
+    '123456',
+    '1234567',
+    '12345678',
+    '123456789',
+    '1234567890',
+    'password',
+    'password1',
+    'password12',
+    'password123',
+    'password123!',
+    'passw0rd',
+    'passw0rd!',
+    'qwerty',
+    'qwerty1',
+    'qwerty12',
+    'qwerty123',
+    'qwerty123!',
+    'admin',
+    'admin123',
+    'admin123!',
+    'welcome',
+    'welcome1',
+    'welcome12',
+    'welcome123',
+    'welcome123!',
+    'letmein',
+    'letmein1',
+    'letmein12',
+    'letmein123',
+    'monkey',
+    'dragon',
+    'master',
+    'login',
+    'abc123',
+    'abc12345',
+    'abcd1234',
+    'abcd1234!',
+    'changeme',
+    'changeme1',
+    'changeme!',
+    'iloveyou',
+    'sunshine',
+    'princess',
+    'football',
+    'baseball',
+    'mustang',
+    'access',
+    'shadow',
+    'trustno1',
+    'pass1234',
+    'pass1234!',
+    'p@ssw0rd',
+    'p@ssword',
+    'p@ssword1',
+  ].map((s) => s.toLowerCase())
+);
+
+const PASSWORD_HINT =
+  'At least 8 characters, with upper and lower case letters, a number, and a special character (e.g. ! @ # $). Avoid common passwords.';
+
+function validatePasswordClient(password) {
+  const p = String(password || '');
+  if (p.length < 8) return { ok: false, error: 'Password must be at least 8 characters.' };
+  if (!/[a-z]/.test(p) || !/[A-Z]/.test(p)) {
+    return { ok: false, error: 'Password must include both uppercase and lowercase letters.' };
+  }
+  if (!/[0-9]/.test(p)) return { ok: false, error: 'Password must include a number.' };
+  if (!/[^A-Za-z0-9]/.test(p)) {
+    return { ok: false, error: 'Password must include a special character (e.g. ! @ # $).' };
+  }
+  if (COMMON_PASSWORDS.has(p.toLowerCase())) {
+    return { ok: false, error: 'This password is too common. Choose something harder to guess.' };
+  }
+  return { ok: true };
+}
+
 function BrandLogo({ className = 'logo' }) {
   return (
     <img
@@ -233,9 +315,11 @@ function UserEditorDialog({
   const [role, setRole] = useState('user');
   const [processId, setProcessId] = useState('all');
   const [wordQuota, setWordQuota] = useState('');
+  const [passwordError, setPasswordError] = useState('');
 
   useEffect(() => {
     if (!open) return;
+    setPasswordError('');
     if (mode === 'edit' && user) {
       setUsername(user.username);
       setPassword('');
@@ -255,6 +339,14 @@ function UserEditorDialog({
 
   const submit = (e) => {
     e.preventDefault();
+    if (mode === 'add' || password) {
+      const strength = validatePasswordClient(password);
+      if (!strength.ok) {
+        setPasswordError(strength.error);
+        return;
+      }
+    }
+    setPasswordError('');
     onSave({
       username: username.trim(),
       password,
@@ -291,13 +383,21 @@ function UserEditorDialog({
             <input
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (passwordError) setPasswordError('');
+              }}
               disabled={busy}
               required={mode === 'add'}
               minLength={mode === 'add' ? 8 : undefined}
               autoComplete="new-password"
+              aria-invalid={passwordError ? 'true' : undefined}
+              aria-describedby="password-policy-hint"
             />
-            <span className="field-hint">At least 8 characters, with letters and numbers.</span>
+            <span id="password-policy-hint" className="field-hint">
+              {PASSWORD_HINT}
+            </span>
+            {passwordError ? <span className="field-error">{passwordError}</span> : null}
           </label>
           <label className="field">
             <span>Role</span>

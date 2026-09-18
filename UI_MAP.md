@@ -13,7 +13,7 @@ Styles for all UI live in `client/src/styles.css`. Entry: `client/src/main.jsx` 
 | Auth bar (username · admin) | `App.jsx` (`.auth-bar`) | `/api/me` |
 | **Manage** / **Back to translate** | `App.jsx` (`showAdmin`, admin button) | — |
 | **Sign out** | `App.jsx` (`logout`) | `POST /api/logout` → `auth.js` `clearSessionCookie` |
-| Manage users panel (list + **Add user** / **Edit** dialog: role, process, word quota) | `App.jsx` (`ManageUsers`, `UserEditorDialog`) | `/api/users*` → `routes/auth.js`, `auth.js` CRUD; password ≥8 + letter+number |
+| Manage users panel (list + **Add user** / **Edit** dialog: role, process, word quota) | `App.jsx` (`ManageUsers`, `UserEditorDialog`) | `/api/users*` → `routes/auth.js`, `auth.js` CRUD; password ≥8 + upper/lower + number + special + common-list |
 | **Word quota** card (non-admin users with a limit) | `App.jsx` (translate view); styles `.quota-card` | `/api/me`, `/api/meta` `wordQuota`; blocked at `POST /api/translate` |
 | **Customers** admin list (add/edit/remove, template ID, one pass vs three-step) | `App.jsx` (`ManageCustomers`); styles `.customer-admin-form` `.lock-checks` | `/api/customers*` → `routes/customers.js`, `services/customers.js` |
 | Admin import local data (users/customers/word-stats) | `routes/adminSync.js` `POST /api/admin/import-local-data` | `auth.importUsersSnapshot`, `customers.importCustomersSnapshot`, `wordStats.importWordStatsSnapshot` |

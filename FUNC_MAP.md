@@ -49,7 +49,7 @@ Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
 | `bootstrapUsers` / `ensureAdminFromEnv` / `loadFromDisk` / `persist` | `data/users.json` lifecycle |
 | `hashPassword` / `verifyPassword` | scrypt |
 | `authenticate` | Login check |
-| `validatePasswordStrength` | New/changed passwords: ≥8 chars, letter + number |
+| `validatePasswordStrength` | New/changed passwords: ≥8, upper+lower, number, special, not common |
 | `signToken` / `verifyToken` | HMAC session cookie |
 | `setSessionCookie` / `clearSessionCookie` / `readSession` | Cookie `lt_session` |
 | `requireAuth` / `requireAdmin` | Middleware |
@@ -59,7 +59,7 @@ Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
 | `getAllowedCustomerIds` / `userCanUseCustomer` / `stripCustomerFromUsers` | Lock a user to one or more customers |
 | `authEnabled` / `isAdmin` | Gates |
 
-Routes: `server/src/routes/auth.js` → `/me`, `/login` (rate limit via `util/loginRateLimit.js`), `/logout`, `/users` CRUD.  
+Routes: `server/src/routes/auth.js` → `/me`, `/login` (progressive delay + burst cap + lock via `util/loginRateLimit.js`), `/logout`, `/users` CRUD.  
 Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-data`. Script: `scripts/sync-local-data-to-render.js`.
 
 ## Translate routes (`server/src/routes/translate.js`)
