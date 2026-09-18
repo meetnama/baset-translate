@@ -96,7 +96,7 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 | `publicForUser` | Names for `/meta` (no vendor names); honors user lock |
 | `resolveSetup` | Customer id → template + one-pass vs three-step |
 
-Seeds: `diaab` (Path A template) + `normal` (“Normal”, Loc_Template `FZg60dEA9Yj4nyvp1ka1K4`, 3-step).
+Seeds: `premium-ai` (“Premium AI”, one-pass) + `full-workflow` (“Full workflow”, 3-step template `FZg60dEA9Yj4nyvp1ka1K4`).
 
 Routes: `server/src/routes/customers.js` → `/customers` CRUD (admin).
 

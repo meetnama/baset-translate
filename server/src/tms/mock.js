@@ -28,7 +28,7 @@ class MockTmsClient {
   async createProject({ name, sourceLang, targetLangs, templateUid, setupId, singleStep }) {
     this._singleStep = Boolean(singleStep) || (setupId !== 'workflow' && setupId !== undefined);
     if (singleStep === false) this._singleStep = false;
-    this._setupId = this._singleStep ? (setupId || 'diaab') : 'workflow';
+    this._setupId = this._singleStep ? (setupId || 'premium-ai') : 'full-workflow';
     return {
       uid: `mock-proj-${Date.now()}`,
       name,

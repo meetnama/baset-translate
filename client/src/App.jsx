@@ -858,10 +858,10 @@ export default function App() {
     maxUploadMb: 50,
     customers: [],
     setups: [],
-    defaultCustomer: 'diaab',
-    defaultSetup: 'diaab',
+    defaultCustomer: 'premium-ai',
+    defaultSetup: 'premium-ai',
   });
-  const [customerId, setCustomerId] = useState('diaab');
+  const [customerId, setCustomerId] = useState('premium-ai');
   const [metaError, setMetaError] = useState('');
   const [fileNote, setFileNote] = useState('');
   const [files, setFiles] = useState([]);

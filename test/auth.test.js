@@ -17,15 +17,15 @@ const {
 const { createCorsOriginChecker, parseAllowList } = require('../server/src/util/corsAllowlist');
 
 test('a user with no customer assignments cannot use any customer', () => {
-  assert.equal(canUseCustomerId([], 'diaab'), false);
-  assert.equal(canUseCustomerId([], 'normal'), false);
+  assert.equal(canUseCustomerId([], 'premium-ai'), false);
+  assert.equal(canUseCustomerId([], 'full-workflow'), false);
 });
 
 test('an unrestricted user and an admin can use customers', () => {
-  assert.equal(canUseCustomerId(null, 'diaab'), true);
-  assert.equal(canUseCustomerId(['diaab'], 'diaab'), true);
-  assert.equal(canUseCustomerId(['diaab'], 'normal'), false);
-  assert.equal(canUseCustomerId([], 'normal', true), true);
+  assert.equal(canUseCustomerId(null, 'premium-ai'), true);
+  assert.equal(canUseCustomerId(['premium-ai'], 'premium-ai'), true);
+  assert.equal(canUseCustomerId(['premium-ai'], 'full-workflow'), false);
+  assert.equal(canUseCustomerId([], 'full-workflow', true), true);
 });
 
 test('an empty customer id is blocked when the user has no assigned processes', () => {
@@ -75,14 +75,14 @@ test('login rate limit locks after repeated failures', () => {
 });
 
 test('CORS allow-list does not reflect unknown origins', async () => {
-  const checker = createCorsOriginChecker('https://baset-translate.onrender.com', {
+  const checker = createCorsOriginChecker('https://lingotrust-translate.onrender.com', {
     hosted: true,
   });
   const allow = (origin) =>
     new Promise((resolve) => {
       checker(origin, (_err, ok) => resolve(ok));
     });
-  assert.equal(await allow('https://baset-translate.onrender.com'), true);
+  assert.equal(await allow('https://lingotrust-translate.onrender.com'), true);
   assert.equal(await allow('https://pentest.com'), false);
   assert.equal(await allow(undefined), true);
 });

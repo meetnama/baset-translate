@@ -132,7 +132,7 @@ function ensureTestUserFromEnv() {
   const p = String(process.env.TEST_USER_PASSWORD || '');
   if (!u || !p || users.has(u)) return;
   const quota = normalizeWordQuota(process.env.TEST_USER_WORD_QUOTA) || 5000;
-  const customerIds = String(process.env.TEST_USER_CUSTOMERS || 'normal')
+  const customerIds = String(process.env.TEST_USER_CUSTOMERS || 'premium-ai')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);

@@ -20,7 +20,7 @@ function parseAllowList(corsOriginEnv, { hosted = false, renderUrl = '' } = {}) 
 
   if (hosted) {
     // Live default when env was left as *
-    if (!set.size) set.add('https://baset-translate.onrender.com');
+    if (!set.size) set.add('https://lingotrust-translate.onrender.com');
   } else {
     set.add('http://localhost:5173');
     set.add('http://127.0.0.1:5173');

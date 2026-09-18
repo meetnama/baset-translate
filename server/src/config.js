@@ -37,12 +37,12 @@ module.exports = {
     // platform = access token → JWT (Bearer); apitoken = legacy ApiToken header
     authMode: (process.env.TMS_AUTH_MODE || 'platform').toLowerCase(),
     oauthUrl: process.env.TMS_OAUTH_URL || 'https://eu.phrase.com/idm/oauth/token',
-    // Loc_Template: 3-step general pipeline (Full workflow).
+    // Loc_Template / Full workflow: 3-step project template.
     projectTemplateUid: (process.env.TMS_PROJECT_TEMPLATE_UID || 'FZg60dEA9Yj4nyvp1ka1K4').trim(),
-    // Diaab Path A template (TM + lock TB + Agent). Used for Ahmed Diaab.
+    // Premium AI template (TM + lock TB + Agent).
     aiTemplateUid: (process.env.TMS_AI_TEMPLATE_UID || 'rSLTo7avyCpO65101YU4cb').trim(),
-    // Default product setup: diaab | workflow  (ai is accepted as diaab)
-    defaultSetup: (process.env.TRANSLATION_DEFAULT_SETUP || 'diaab').toLowerCase(),
+    // Default product setup: premium-ai | full-workflow
+    defaultSetup: (process.env.TRANSLATION_DEFAULT_SETUP || 'premium-ai').toLowerCase(),
     // MT engine id for AI / last workflow step (AI Translation Agent). Empty = project settings.
     wf3MtId: (process.env.TMS_WF3_MT_ID || '5239171').trim(),
   },
