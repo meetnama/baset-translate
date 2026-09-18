@@ -609,6 +609,13 @@ label.field > span,
   letter-spacing: 0.01em;
 }
 
+label.field > span.field-hint {
+  font-weight: 400;
+  margin-top: 6px;
+  margin-bottom: 0;
+  opacity: 0.85;
+}
+
 select {
   width: 100%;
   border-radius: var(--radius);

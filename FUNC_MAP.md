@@ -37,6 +37,7 @@ Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
 |---|---|
 | `hosted` | `RENDER` / `HOSTED` |
 | `auth.*` | Admin bootstrap, secret, session, `syncAdminPassword`, `secureCookie` |
+| `corsOrigin` | Allow-list string; enforced by `util/corsAllowlist.js` (no arbitrary Origin reflect) |
 | `tms.*` | TMS URL/token, 3-step + AI template UIDs, `wf3MtId`, `defaultSetup` |
 | `mode` | `live` vs `mock` |
 | dirs | `dataDir`, `runsDir`, `publicDir` |
@@ -48,6 +49,7 @@ Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
 | `bootstrapUsers` / `ensureAdminFromEnv` / `loadFromDisk` / `persist` | `data/users.json` lifecycle |
 | `hashPassword` / `verifyPassword` | scrypt |
 | `authenticate` | Login check |
+| `validatePasswordStrength` | New/changed passwords: ≥8 chars, letter + number |
 | `signToken` / `verifyToken` | HMAC session cookie |
 | `setSessionCookie` / `clearSessionCookie` / `readSession` | Cookie `lt_session` |
 | `requireAuth` / `requireAdmin` | Middleware |
@@ -57,7 +59,7 @@ Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
 | `getAllowedCustomerIds` / `userCanUseCustomer` / `stripCustomerFromUsers` | Lock a user to one or more customers |
 | `authEnabled` / `isAdmin` | Gates |
 
-Routes: `server/src/routes/auth.js` → `/me`, `/login`, `/logout`, `/users` CRUD.  
+Routes: `server/src/routes/auth.js` → `/me`, `/login` (rate limit via `util/loginRateLimit.js`), `/logout`, `/users` CRUD.  
 Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-data`. Script: `scripts/sync-local-data-to-render.js`.
 
 ## Translate routes (`server/src/routes/translate.js`)
@@ -66,8 +68,9 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 |---|---|
 | multer `storage` / `uuidSlice` / `cleanupUploads` | Unique upload names; unlink on fail |
 | `decodeMultipartFilename` (`util/filenames.js`) | Fix UTF-8 upload names (Arabic/CJK/etc.) after multer Latin-1 |
+| `scanUploadForPromptInjection` / `estimateUploadWords` (`util/promptSafety.js`) | Reject obvious prompt-injection text; early quota estimate for text files |
 | `GET /meta` | Languages + extensions + `customers` (filtered by user lock) |
-| `POST /translate` | Start run (`customerId`); reject empty/odd files |
+| `POST /translate` | Start run (`customerId`); reject empty/odd files; quota + injection gates |
 | `GET /translate/:id` | Poll public run |
 | `GET .../files/:fileId/download` | Single / `downloadId` WF download |
 | `GET .../download-all` | Zip from `downloads[]` |
@@ -76,9 +79,9 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 
 | Symbol | Role |
 |---|---|
-| `createRun` | Queue run, kick `processRun` |
+| `createRun` | Queue run, kick `processRun`; stores `quotaRemainingAtStart` |
 | `getRun` / `getRunInternal` / `publicRun` | Status for API |
-| `processRun` / `processFile` | Customer template; one-pass = 1 download; Full workflow = 3-step |
+| `processRun` / `processFile` | Customer template; one-pass = 1 download; Full workflow = 3-step; post-analysis quota withhold; download leak scan |
 | `publicDownloads` | Hide extra step files for one-pass jobs |
 | `projectDateTimeName` | Unique TMS project names |
 | `pruneOldRuns` | Drop finished runs after 6h |

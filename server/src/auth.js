@@ -263,6 +263,18 @@ function userCanUseCustomer(username, customerId, isAdminUser) {
   return canUseCustomerId(getAllowedCustomerIds(username), customerId, isAdminUser);
 }
 
+/** New / changed passwords: 8+ chars with at least one letter and one number. */
+function validatePasswordStrength(password) {
+  const p = String(password || '');
+  if (p.length < 8) {
+    return { ok: false, error: 'Password must be at least 8 characters.' };
+  }
+  if (!/[A-Za-z]/.test(p) || !/[0-9]/.test(p)) {
+    return { ok: false, error: 'Password must include letters and numbers.' };
+  }
+  return { ok: true };
+}
+
 function createUser({ username, password, role = 'user', allowedCustomerIds, wordQuota }) {
   const u = String(username || '').trim();
   const p = String(password || '');
@@ -271,7 +283,8 @@ function createUser({ username, password, role = 'user', allowedCustomerIds, wor
   if (!/^[a-zA-Z0-9._@-]{2,64}$/.test(u)) {
     return { ok: false, error: 'Username must be 2–64 characters (letters, numbers, . _ @ -).' };
   }
-  if (p.length < 4) return { ok: false, error: 'Password must be at least 4 characters.' };
+  const strength = validatePasswordStrength(p);
+  if (!strength.ok) return strength;
   if (users.has(u)) return { ok: false, error: 'That username already exists.' };
   users.set(u, {
     passwordHash: hashPassword(p),
@@ -292,7 +305,8 @@ function setUserPassword(username, password) {
   const u = String(username || '').trim();
   const p = String(password || '');
   if (!users.has(u)) return { ok: false, error: 'User not found.' };
-  if (p.length < 4) return { ok: false, error: 'Password must be at least 4 characters.' };
+  const strength = validatePasswordStrength(p);
+  if (!strength.ok) return strength;
   const row = users.get(u);
   users.set(u, { ...row, passwordHash: hashPassword(p) });
   persist();
@@ -544,6 +558,7 @@ module.exports = {
   userCanUseCustomer,
   getQuotaStatus,
   userQuotaAllowsTranslate,
+  validatePasswordStrength,
   deleteUser,
   importUsersSnapshot,
   COOKIE_NAME,

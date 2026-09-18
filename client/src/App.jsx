@@ -294,8 +294,10 @@ function UserEditorDialog({
               onChange={(e) => setPassword(e.target.value)}
               disabled={busy}
               required={mode === 'add'}
+              minLength={mode === 'add' ? 8 : undefined}
               autoComplete="new-password"
             />
+            <span className="field-hint">At least 8 characters, with letters and numbers.</span>
           </label>
           <label className="field">
             <span>Role</span>

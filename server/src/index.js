@@ -48,14 +48,14 @@ function armWatchdog() {
   }, 5000);
 }
 
-const corsOrigin =
-  config.corsOrigin === '*'
-    ? true
-    : config.corsOrigin.split(',').map((s) => s.trim());
+const { createCorsOriginChecker } = require('./util/corsAllowlist');
 
 app.use(
   cors({
-    origin: corsOrigin,
+    origin: createCorsOriginChecker(config.corsOrigin, {
+      hosted: config.hosted,
+      renderUrl: process.env.RENDER_EXTERNAL_URL || process.env.RENDER_SERVICE_URL || '',
+    }),
     credentials: true,
   })
 );

@@ -15,6 +15,10 @@ const {
   getQuotaStatus,
 } = require('../auth');
 const { decodeMultipartFilename } = require('../util/filenames');
+const {
+  scanUploadForPromptInjection,
+  estimateUploadWords,
+} = require('../util/promptSafety');
 
 const router = express.Router();
 
@@ -147,6 +151,11 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
           cleanupUploads(files);
           return res.status(400).json({ error: `${f.originalname} is empty. Add content and try again.` });
         }
+        const inj = scanUploadForPromptInjection(buf, f.originalname);
+        if (!inj.ok) {
+          cleanupUploads(files);
+          return res.status(400).json({ error: inj.error });
+        }
       } catch {
         cleanupUploads(files);
         return res.status(400).json({ error: `Couldn’t read ${f.originalname}.` });
@@ -171,12 +180,44 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
       });
     }
 
+    // Early quota gate when we can estimate (text-like files). Binary uses post-analysis check.
+    if (req.user) {
+      const q = getQuotaStatus(req.user);
+      if (!q.unlimited && q.remaining != null) {
+        let estimated = 0;
+        let anyEstimate = false;
+        for (const f of files) {
+          try {
+            const buf = fs.readFileSync(f.path);
+            const n = estimateUploadWords(buf, f.originalname);
+            if (n != null) {
+              anyEstimate = true;
+              estimated += n;
+            }
+          } catch {
+            /* skip */
+          }
+        }
+        if (anyEstimate && estimated > q.remaining) {
+          cleanupUploads(files);
+          return res.status(403).json({
+            error: `This upload looks larger than your remaining word quota (${estimated.toLocaleString()} estimated vs ${q.remaining.toLocaleString()} left). Contact admin for more.`,
+            wordQuota: q,
+          });
+        }
+      }
+    }
+
     const run = await createRun({
       files,
       sourceLang,
       targetLangs,
       setupId: customerId,
       username: req.user || null,
+      quotaRemainingAtStart:
+        req.user && !getQuotaStatus(req.user).unlimited
+          ? getQuotaStatus(req.user).remaining
+          : null,
     });
     res.status(202).json(run);
   } catch (err) {

@@ -17,6 +17,11 @@ const {
   getQuotaStatus,
   deleteUser,
 } = require('../auth');
+const {
+  assertLoginAllowed,
+  recordLoginFailure,
+  recordLoginSuccess,
+} = require('../util/loginRateLimit');
 
 const router = express.Router();
 
@@ -37,10 +42,18 @@ router.post('/login', (req, res) => {
   if (!authEnabled()) {
     return res.status(503).json({ error: 'Auth is not configured on this server.' });
   }
-  const result = authenticate(req.body?.username, req.body?.password);
+  const username = req.body?.username;
+  const gate = assertLoginAllowed(req, username);
+  if (!gate.ok) {
+    res.setHeader('Retry-After', String(gate.retryAfterSec || 60));
+    return res.status(429).json({ error: gate.error });
+  }
+  const result = authenticate(username, req.body?.password);
   if (!result.ok) {
+    recordLoginFailure(req, username);
     return res.status(401).json({ error: result.error });
   }
+  recordLoginSuccess(req, result.user);
   setSessionCookie(res, result.user);
   res.json({ ok: true, user: result.user, isAdmin: result.role === 'admin' });
 });

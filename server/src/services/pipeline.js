@@ -6,6 +6,8 @@ const { createTmsClient } = require('../tms');
 const { resolveSetup } = require('./setups');
 const { recordWordStat } = require('./wordStats');
 const { decodeMultipartFilename, safeDownloadFilename } = require('../util/filenames');
+const { scanDownloadForPromptLeak } = require('../util/promptSafety');
+const { getQuotaStatus } = require('../auth');
 
 /** @type {Map<string, object>} */
 const runs = new Map();
@@ -128,7 +130,7 @@ function setProgress(run) {
   }
 }
 
-async function createRun({ files, sourceLang, targetLangs, setupId, username }) {
+async function createRun({ files, sourceLang, targetLangs, setupId, username, quotaRemainingAtStart }) {
   ensureDirs();
   pruneOldRuns();
   const id = uuidv4();
@@ -144,6 +146,10 @@ async function createRun({ files, sourceLang, targetLangs, setupId, username }) 
     targetLangs,
     setupId: setup.id,
     username: username ? String(username).trim() : null,
+    quotaRemainingAtStart:
+      quotaRemainingAtStart == null || Number.isNaN(Number(quotaRemainingAtStart))
+        ? null
+        : Math.max(0, Number(quotaRemainingAtStart)),
     singleStep: Boolean(setup.singleStep),
     createdAt: new Date().toISOString(),
     runDir,
@@ -226,10 +232,14 @@ async function processRun(run) {
     } catch (err) {
       console.error(`[run ${run.id}] file ${file.name}:`, err.message, err.detail || '');
       file.status = 'failed';
-      file.error =
-        err.message === 'File is empty'
-          ? 'This file is empty. Add content and try again.'
-          : 'Couldn’t translate this file. Check the format and try again.';
+      const msg = String(err.message || '');
+      if (msg === 'File is empty') {
+        file.error = 'This file is empty. Add content and try again.';
+      } else if (/over your remaining quota/i.test(msg) || /looked unsafe and was blocked/i.test(msg)) {
+        file.error = msg;
+      } else {
+        file.error = 'Couldn’t translate this file. Check the format and try again.';
+      }
     }
     setProgress(run);
   }
@@ -373,6 +383,10 @@ async function processFile(tms, run, file, mtUid, setup) {
         if (!downloaded?.buffer?.length) {
           throw new Error(`Empty download at workflow step ${level}`);
         }
+        const leak = scanDownloadForPromptLeak(downloaded.buffer, downloaded.fileName || file.name);
+        if (!leak.ok) {
+          throw new Error(leak.error);
+        }
         const outExt = ext || path.parse(downloaded.fileName || '').ext || '';
         const outName = setup?.singleStep
           ? `${base}_${lang}${outExt}`
@@ -401,10 +415,13 @@ async function processFile(tms, run, file, mtUid, setup) {
       throw new Error('No workflow-step downloads produced');
     }
 
+    let analysisWords = null;
     try {
       if (typeof tms.runProjectWordAnalysis === 'function') {
         // Count words only after a successful download so failed jobs do not eat quota.
         const summary = await tms.runProjectWordAnalysis({ projectUid });
+        analysisWords = Number(summary.totalWords) || 0;
+
         recordWordStat({
           runId: run.id,
           projectUid,
@@ -416,8 +433,35 @@ async function processFile(tms, run, file, mtUid, setup) {
           fileCount: summary.fileCount || 1,
           totalWords: summary.totalWords,
         });
+
+        // Post-analysis quota: withhold delivery if this file alone exceeds remaining at start.
+        const remainingCap =
+          run.quotaRemainingAtStart != null
+            ? run.quotaRemainingAtStart
+            : run.username
+              ? getQuotaStatus(run.username).remaining
+              : null;
+        const quota = run.username ? getQuotaStatus(run.username) : { unlimited: true };
+        if (!quota.unlimited && remainingCap != null && analysisWords > remainingCap) {
+          for (const d of saved) {
+            try {
+              fs.unlinkSync(d.path);
+            } catch {
+              /* ignore */
+            }
+          }
+          throw new Error(
+            `This file is ${analysisWords.toLocaleString()} words, over your remaining quota (${Number(remainingCap).toLocaleString()} left). Contact admin for more.`
+          );
+        }
       }
     } catch (err) {
+      if (
+        /over your remaining quota/i.test(err.message) ||
+        /looked unsafe and was blocked/i.test(err.message)
+      ) {
+        throw err;
+      }
       console.warn('[pipeline] word count analysis failed:', err.message);
     }
 
