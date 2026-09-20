@@ -1361,16 +1361,14 @@ export default function App() {
 
       {noCustomer ? (
         <section className="card">
-          <h2>Customer</h2>
+          <h2>Template Type</h2>
           <p className="sub">No process is assigned to this account. Ask an admin to assign one before you translate.</p>
         </section>
       ) : (
         <section className="card">
-          <h2>Customer</h2>
+          <h2>Template Type</h2>
           <p className="sub">
-            {customerOptions.length === 1
-              ? 'This account is set to one customer.'
-              : 'Pick the customer for this job. Each one uses its own saved translations and writing rules.'}
+            Hit the template tailored to your required workflow, selected package, and project expectations.
           </p>
           <div className="setup-grid">
             {customerOptions.map((s) => {
@@ -1492,7 +1490,7 @@ export default function App() {
             <path d="M12 3v12" />
           </svg>
           <h3>Drop files here or click to browse</h3>
-          <p>Office, bilingual, localization, DTP, and subtitle files</p>
+          <p>Office Documents, CAT Tool Files, DTP Files, Bilingual Files, Subtitle Files, and Localization Packages</p>
           <div className="formats">
             {previewFormats.map((f) => (
               <span className="fmt" key={f}>{f}</span>

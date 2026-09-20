@@ -28,7 +28,7 @@ function seedDefaults() {
     {
       id: 'premium-ai',
       name: 'Premium AI',
-      hint: 'One pass. Uses this customer’s saved translations, locked terms, and writing rules.',
+      hint: 'A client-specific AI workflow using customized templates, approved terminology, and predefined style and writing rules.',
       templateUid: config.tms.aiTemplateUid || PREMIUM_AI_TEMPLATE_UID,
       mode: 'single',
       enabled: true,
@@ -36,7 +36,7 @@ function seedDefaults() {
     {
       id: 'full-workflow',
       name: 'Full workflow',
-      hint: 'Three steps: machine translation, optimize, then AI translate.',
+      hint: 'Complete translation workflow combining machine translation, AI optimization, and final AI refinement.',
       templateUid: FULL_WORKFLOW_TEMPLATE_UID,
       mode: 'workflow',
       enabled: true,
@@ -110,25 +110,36 @@ function migrateLegacyIds() {
   }
   // Refresh display names if still on old labels
   const premium = customers.get('premium-ai');
-  if (premium && (premium.name === 'Ahmed Diaab' || premium.name === 'diaab')) {
+  const premiumHintNew =
+    'A client-specific AI workflow using customized templates, approved terminology, and predefined style and writing rules.';
+  if (
+    premium &&
+    (premium.name === 'Ahmed Diaab' ||
+      premium.name === 'diaab' ||
+      premium.hint ===
+        'One pass. Uses this customer’s saved translations, locked terms, and writing rules.')
+  ) {
     customers.set('premium-ai', {
       ...premium,
       name: 'Premium AI',
-      hint: 'One pass. Uses this customer’s saved translations, locked terms, and writing rules.',
+      hint: premiumHintNew,
     });
     changed = true;
   }
   const full = customers.get('full-workflow');
+  const fullHintNew =
+    'Complete translation workflow combining machine translation, AI optimization, and final AI refinement.';
   if (
     full &&
     (full.name === 'Normal' ||
       full.name === 'Normal Customer' ||
+      full.hint === 'Three steps: machine translation, optimize, then AI translate.' ||
       /Loc_Template|diaab|normal/i.test(full.hint || ''))
   ) {
     customers.set('full-workflow', {
       ...full,
       name: 'Full workflow',
-      hint: 'Three steps: machine translation, optimize, then AI translate.',
+      hint: fullHintNew,
     });
     changed = true;
   }

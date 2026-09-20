@@ -68,7 +68,7 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 |---|---|
 | multer `storage` / `uuidSlice` / `cleanupUploads` | Unique upload names; unlink on fail |
 | `decodeMultipartFilename` (`util/filenames.js`) | Fix UTF-8 upload names (Arabic/CJK/etc.) after multer Latin-1 |
-| `scanUploadForPromptInjection` / `estimateUploadWords` (`util/promptSafety.js`) | Reject obvious prompt-injection text; early quota estimate for text files |
+| `scanUploadForPromptInjection` / `estimateUploadWords` (`util/promptSafety.js`) | Reject prompt-injection text; early quota estimate (text count + Office/binary size ceiling) |
 | `GET /meta` | Languages + extensions + `customers` (filtered by user lock) |
 | `POST /translate` | Start run (`customerId`); reject empty/odd files; quota + injection gates |
 | `GET /translate/:id` | Poll public run |

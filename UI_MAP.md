@@ -6,7 +6,7 @@ Styles for all UI live in `client/src/styles.css`. Entry: `client/src/main.jsx` 
 | UI element / screen | Primary file(s) | Related API / server |
 |---|---|---|
 | Loading splash (skeleton) | `client/src/App.jsx` (`App`, `authReady`); styles `.loading-screen` | `GET /api/me` → `server/src/routes/auth.js` |
-| Login screen (split aside + form, Sign in) | `client/src/App.jsx` (`LoginScreen`); styles `.login-shell` | `POST /api/login` → `routes/auth.js`, `auth.js`; rate limit `util/loginRateLimit.js` (10 fails / 15 min per IP + username) |
+| Login screen (split aside + form, Sign in) | `client/src/App.jsx` (`LoginScreen`); styles `.login-shell` | `POST /api/login` → `routes/auth.js`, `auth.js`; rate limit `util/loginRateLimit.js` (progressive delay + 20/min IP burst + 10 fails / 15 min lock) |
 | Login error banner | `App.jsx` (`LoginScreen` error) | login route |
 | Top header / brand (LingoTrust logo + “Translate”) | `App.jsx` (`BrandLogo`, header `.top`); `client/public/lingotrust-logo.png`; styles `.logo` `.brand` | — |
 | Login aside brand logo | `App.jsx` (`LoginScreen`, `BrandLogo`) | — |
@@ -18,7 +18,7 @@ Styles for all UI live in `client/src/styles.css`. Entry: `client/src/main.jsx` 
 | **Customers** admin list (add/edit/remove, template ID, one pass vs three-step) | `App.jsx` (`ManageCustomers`); styles `.customer-admin-form` `.lock-checks` | `/api/customers*` → `routes/customers.js`, `services/customers.js` |
 | Admin import local data (users/customers/word-stats) | `routes/adminSync.js` `POST /api/admin/import-local-data` | `auth.importUsersSnapshot`, `customers.importCustomersSnapshot`, `wordStats.importWordStatsSnapshot` |
 | Error / meta error banner (translate view) | `App.jsx` | `/api/meta`, translate status |
-| **Customer** picker | `App.jsx` (`customerId`); styles `.setup-option` | `GET /api/meta` `customers` → `server/src/services/customers.js` |
+| **Template Type** picker (was Customer) | `App.jsx` (`customerId`); styles `.setup-option` | `GET /api/meta` `customers` → `server/src/services/customers.js` |
 | No process assigned (empty customer list) | `App.jsx` (`noCustomer`) | Translate disabled until admin assigns a process |
 | **Languages** card (From select) | `App.jsx` (`sourceLang`, `setSource`) | `GET /api/meta` → `routes/translate.js` |
 | **To** multi-select (trigger, search, checkboxes) | `App.jsx` (`targetLangs`, multi-select) | same `/api/meta` languages |
