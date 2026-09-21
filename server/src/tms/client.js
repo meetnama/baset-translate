@@ -15,6 +15,8 @@ class LiveTmsClient {
     this.authMode = config.authMode || 'platform';
     this.oauthUrl = config.oauthUrl || 'https://eu.phrase.com/idm/oauth/token';
     this.projectTemplateUid = config.projectTemplateUid || '';
+    this.asyncTimeoutMs =
+      Number(config.asyncTimeoutMs) > 0 ? Number(config.asyncTimeoutMs) : 30 * 60 * 1000;
     this._jwt = null;
     this._jwtExpiresAt = 0;
     this._languagesCache = null;
@@ -245,9 +247,10 @@ class LiveTmsClient {
     return this._request('GET', `/api2/v1/async/${asyncRequestId}`);
   }
 
-  async waitAsync(asyncRequestId, { timeoutMs = 10 * 60 * 1000, intervalMs = 2000 } = {}) {
+  async waitAsync(asyncRequestId, { timeoutMs, intervalMs = 2000 } = {}) {
+    const limitMs = timeoutMs > 0 ? timeoutMs : this.asyncTimeoutMs;
     const start = Date.now();
-    while (Date.now() - start < timeoutMs) {
+    while (Date.now() - start < limitMs) {
       const status = await this.getAsync(asyncRequestId);
       const done =
         status?.asyncResponse != null ||
@@ -256,7 +259,7 @@ class LiveTmsClient {
         status?.status === 'OK';
       if (done) {
         if (status?.asyncResponse?.errorCode || status?.status === 'FAILED') {
-          const err = new Error('Processing failed');
+          const err = new Error(asyncFailureMessage(status));
           err.detail = status;
           throw err;
         }
@@ -264,7 +267,10 @@ class LiveTmsClient {
       }
       await new Promise((r) => setTimeout(r, intervalMs));
     }
-    throw new Error('Processing timed out');
+    const mins = Math.max(1, Math.round(limitMs / 60000));
+    throw new Error(
+      `Translation timed out after ${mins} minutes while waiting for the translation service. The file may still be within size limits — try again, or split a very large deck.`
+    );
   }
 
   async listProjectJobs(projectUid, { workflowLevel } = {}) {
@@ -613,6 +619,29 @@ function bufferFromResponse(res, jobPartUid) {
     }
     return { buffer: buf, fileName };
   });
+}
+
+/** User-facing message from a failed TMS async poll (no vendor names). */
+function asyncFailureMessage(status) {
+  const ar = status?.asyncResponse || {};
+  const raw = [
+    ar.errorDescription,
+    ar.errorMessage,
+    ar.message,
+    status?.errorDescription,
+    status?.errorMessage,
+    status?.message,
+    ar.errorCode,
+    status?.errorCode,
+  ]
+    .map((v) => (v == null ? '' : String(v).trim()))
+    .find((s) => s.length > 0);
+  let msg = raw || 'Translation processing failed.';
+  msg = msg
+    .replace(/\bphrase\b/gi, 'translation service')
+    .replace(/\bmemsource\b/gi, 'translation service');
+  if (msg.length > 400) msg = `${msg.slice(0, 397)}...`;
+  return msg;
 }
 
 module.exports = { LiveTmsClient };

@@ -45,5 +45,10 @@ module.exports = {
     defaultSetup: (process.env.TRANSLATION_DEFAULT_SETUP || 'premium-ai').toLowerCase(),
     // MT engine id for AI / last workflow step (AI Translation Agent). Empty = project settings.
     wf3MtId: (process.env.TMS_WF3_MT_ID || '5239171').trim(),
+    // How long to wait for one TMS async step (import, AI/MT, export). Large PPTX can exceed 10 min.
+    asyncTimeoutMs: Math.max(
+      60 * 1000,
+      Number(process.env.TMS_ASYNC_TIMEOUT_MS) || 30 * 60 * 1000
+    ),
   },
 };

@@ -26,6 +26,28 @@ function isEmptyUploadBuffer(buffer) {
   return false;
 }
 
+/** Safe message for the Progress UI (real reason, no vendor names). */
+function publicFileError(err) {
+  const msg = String(err?.message || '').trim();
+  if (!msg) return 'Couldn’t translate this file. Please try again.';
+  if (msg === 'File is empty') {
+    return 'This file is empty. Add content and try again.';
+  }
+  let out = msg
+    .replace(/\bphrase\b/gi, 'translation service')
+    .replace(/\bmemsource\b/gi, 'translation service');
+  // Legacy short timeout string from older builds
+  if (/^Processing timed out$/i.test(out)) {
+    out =
+      'Translation timed out while waiting for the translation service. The file may still be within size limits — try again, or split a very large deck.';
+  }
+  if (/^Processing failed$/i.test(out)) {
+    out = 'Translation processing failed. Check the file and try again.';
+  }
+  if (out.length > 400) out = `${out.slice(0, 397)}...`;
+  return out;
+}
+
 /** TMS project name: project_YYYY-MM-DD_HH-mm-ss_<shortId> */
 function projectDateTimeName() {
   const d = new Date();
@@ -174,7 +196,7 @@ async function createRun({ files, sourceLang, targetLangs, setupId, username, qu
     run.files.forEach((f) => {
       if (f.status !== 'ready') {
         f.status = 'failed';
-        f.error = 'Couldn’t translate this file. Please try again.';
+        f.error = publicFileError(err);
       }
     });
     setProgress(run);
@@ -232,14 +254,7 @@ async function processRun(run) {
     } catch (err) {
       console.error(`[run ${run.id}] file ${file.name}:`, err.message, err.detail || '');
       file.status = 'failed';
-      const msg = String(err.message || '');
-      if (msg === 'File is empty') {
-        file.error = 'This file is empty. Add content and try again.';
-      } else if (/over your remaining quota/i.test(msg) || /looked unsafe and was blocked/i.test(msg)) {
-        file.error = msg;
-      } else {
-        file.error = 'Couldn’t translate this file. Check the format and try again.';
-      }
+      file.error = publicFileError(err);
     }
     setProgress(run);
   }

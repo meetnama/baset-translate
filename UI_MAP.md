@@ -26,7 +26,7 @@ Styles for all UI live in `client/src/styles.css`. Entry: `client/src/main.jsx` 
 | Format chips preview | `App.jsx` (`previewFormats`) | `meta.fileExtensions` from TMS |
 | File list rows + remove (✕) | `App.jsx` (`files` state) | — |
 | **Translate** button | `App.jsx` (`startTranslate`) | `POST /api/translate` → `pipeline.js`; dimmed while translating or after job done until **New translate** |
-| **Progress** card / bar / status pills | `App.jsx` (`run` poll) | `GET /api/translate/:id` |
+| **Progress** card / bar / status pills | `App.jsx` (`run` poll); failed files show real `f.error` from pipeline | `GET /api/translate/:id` |
 | Per-file / per-WF **Download** links | `App.jsx` (download `<a>`) | `GET /api/translate/:id/files/:fileId/download` |
 | **Download all** | `App.jsx` | `GET /api/translate/:id/download-all` (zip) |
 | **New translate** (Progress, after done/fail) | `App.jsx` (`startNewTranslate`) | Clears Progress + files; re-enables Translate |
