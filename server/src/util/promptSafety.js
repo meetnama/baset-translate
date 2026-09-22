@@ -199,8 +199,44 @@ function normalizeForScan(text) {
 
 const DEST_RE = /\b(?:https?:\/\/|www\.)[^\s<>"')\]]+|\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/gi;
 
+function plainWords(text) {
+  return String(text || '')
+    .replace(/<[^>]{0,200}>/g, ' ')
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
 function wordCount(text) {
-  return String(text || '').split(/\s+/).filter(Boolean).length;
+  return plainWords(text).length;
+}
+
+/**
+ * A long source sentence came back empty, or as little more than a word copied
+ * from that sentence. That means the sentence was followed instead of translated.
+ */
+function segmentFollowedInstructions(source, translation) {
+  const src = plainWords(source);
+  const tgt = plainWords(translation);
+  if (src.length < 10) return false;
+  if (tgt.length <= 1) return true;
+  const srcSet = new Set(src.map((word) => word.toLowerCase()));
+  const copied = tgt.filter((word) => word.length >= 5 && srcSet.has(word.toLowerCase()));
+  return copied.length > 0 && tgt.length <= 3;
+}
+
+/** A made-up code word from the source was placed at the start of a translated sentence. */
+function outputFollowedInstructions(sourceText, targetText) {
+  const srcTokens = new Set(
+    plainWords(sourceText)
+      .filter((word) => word.length >= 8 && word === word.toUpperCase() && /[A-Z]/.test(word))
+      .map((word) => word.toLowerCase())
+  );
+  if (!srcTokens.size) return false;
+  const sentences = String(targetText || '').split(/(?<=[.!?؟])\s+|\n+/);
+  return sentences.some((sentence) => {
+    const words = plainWords(sentence);
+    return words.length > 0 && srcTokens.has(words[0].toLowerCase());
+  });
 }
 
 /** Block results that add a new link or grow like a dumped instruction sheet. */
@@ -405,6 +441,12 @@ function scanDownloadForPromptLeak(buffer, fileName, sourceText) {
   if (sourceText) {
     const structural = structuralOutputProblem(sourceText, text);
     if (structural) return { ok: false, error: structural };
+    if (outputFollowedInstructions(sourceText, text)) {
+      return {
+        ok: false,
+        error: 'A sentence in this file was not translated and was blocked. Remove notes that tell the translator what to do, then try again.',
+      };
+    }
   }
   return { ok: true };
 }
@@ -415,5 +457,6 @@ module.exports = {
   estimateUploadWords,
   sanitizeUploadBuffer,
   canonicalText,
+  segmentFollowedInstructions,
   TEXT_EXTS,
 };

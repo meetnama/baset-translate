@@ -6,7 +6,7 @@ const { createTmsClient } = require('../tms');
 const { resolveSetup } = require('./setups');
 const { recordWordStat } = require('./wordStats');
 const { decodeMultipartFilename, safeDownloadFilename } = require('../util/filenames');
-const { scanDownloadForPromptLeak, sanitizeUploadBuffer, canonicalText } = require('../util/promptSafety');
+const { scanDownloadForPromptLeak, sanitizeUploadBuffer, canonicalText, segmentFollowedInstructions } = require('../util/promptSafety');
 const { getQuotaStatus, reserveRunQuota, commitQuotaHold, releaseQuotaReservation, releaseRunQuota } = require('../auth');
 const { estimateUploadWords } = require('../util/promptSafety');
 
@@ -444,6 +444,23 @@ async function processFile(tms, run, file, mtUid, setup) {
       }
 
       for (const part of parts) {
+        if (typeof tms.listJobSegments === 'function') {
+          try {
+            const segments = await tms.listJobSegments(projectUid, part.uid);
+            const replaced = (segments || []).find((seg) => segmentFollowedInstructions(
+              seg?.source,
+              seg?.translation ?? seg?.target
+            ));
+            if (replaced) {
+              throw new Error(
+                'A sentence in this file was not translated and was blocked. Remove notes that tell the translator what to do, then try again.'
+              );
+            }
+          } catch (err) {
+            if (/was not translated/i.test(err.message)) throw err;
+            console.warn('[pipeline] segment check skipped:', err.message);
+          }
+        }
         const lang = part.targetLang || 'xx';
         const downloaded = await tms.downloadTarget({
           projectUid,

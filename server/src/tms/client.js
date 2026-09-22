@@ -295,6 +295,27 @@ class LiveTmsClient {
     return this._request('GET', `/api2/v1/projects/${pUid}/jobs/${jUid}`);
   }
 
+  /** Source/target pairs after translation. Used to reject a sentence that was not translated. */
+  async listJobSegments(projectUid, jobUid) {
+    const pUid = String(projectUid || '').trim();
+    const jUid = String(jobUid || '').trim();
+    if (!pUid || !jUid) return [];
+    const all = [];
+    let begin = 0;
+    for (let page = 0; page < 40; page += 1) {
+      const data = await this._request(
+        'GET',
+        `/api2/v1/projects/${pUid}/jobs/${jUid}/segments?beginIndex=${begin}&endIndex=${begin + 199}`
+      );
+      const list = Array.isArray(data) ? data : data?.segments || data?.content || [];
+      if (!list.length) break;
+      all.push(...list);
+      if (list.length < 200) break;
+      begin += list.length;
+    }
+    return all;
+  }
+
   async getProject(projectUid) {
     return this._request('GET', `/api2/v1/projects/${projectUid}`);
   }

@@ -128,7 +128,7 @@ Thin re-export of `customers.js` (`resolveSetup`, `publicSetups`).
 
 ### `LiveTmsClient` methods (same interface on mock)
 
-`ping`, `listLanguages`, `listFileExtensions`, `listMachineTranslateSettings`, `getDefaultMtUid`, `createProject`, `setProjectMtSettings`, `createJob`, `getAsync`, `waitAsync` (default wait `TMS_ASYNC_TIMEOUT_MS` / 30 min; surfaces real async errors), `listProjectJobs` (pages of 50), `getProject`, `setProjectMtEngine`, `preTranslate`, `setJobsStatus`, `downloadTarget`, `listProjectAnalyses`, `getAnalysis`, `getJob`, `runProjectWordAnalysis` (analysis if present; else job-detail `wordsCount` without a long empty wait), `parseAnalysisSummary` (+ private `_ensureAuthHeader`, `_headers`, `_request`).
+`ping`, `listLanguages`, `listFileExtensions`, `listMachineTranslateSettings`, `getDefaultMtUid`, `createProject`, `setProjectMtSettings`, `createJob`, `getAsync`, `waitAsync` (default wait `TMS_ASYNC_TIMEOUT_MS` / 30 min; surfaces real async errors), `listProjectJobs` (pages of 50), `getProject`, `setProjectMtEngine`, `preTranslate`, `setJobsStatus`, `downloadTarget`, `listProjectAnalyses`, `getAnalysis`, `getJob`, `listJobSegments` (reject a long sentence that came back empty or as a copied code word), `runProjectWordAnalysis` (analysis if present; else job-detail `wordsCount` without a long empty wait), `parseAnalysisSummary` (+ private `_ensureAuthHeader`, `_headers`, `_request`).
 
 Pipeline file failures: `publicFileError` shows the real reason in Progress (not a generic format message).
 
