@@ -206,10 +206,11 @@ function publicUser(username, row, { includeUsage = false } = {}) {
     out.wordQuota = null;
   }
   if (includeUsage) {
-    const used = getUserWordUsage(username);
-    out.wordsUsed = used;
+    const q = getQuotaStatus(username);
+    out.wordsUsed = q.used;
+    out.wordsReserved = q.reserved || 0;
     if (out.wordQuota != null) {
-      out.wordsRemaining = Math.max(0, out.wordQuota - used);
+      out.wordsRemaining = q.remaining;
     }
   }
   return out;
@@ -218,26 +219,152 @@ function publicUser(username, row, { includeUsage = false } = {}) {
 function getQuotaStatus(username) {
   const row = getUserRecord(username);
   if (!row || row.role === 'admin') {
-    return { unlimited: true, limit: null, used: 0, remaining: null, exhausted: false };
+    return {
+      unlimited: true, limit: null, used: 0, reserved: 0, remaining: null, exhausted: false,
+    };
   }
   const limit = row.wordQuota != null && row.wordQuota > 0 ? row.wordQuota : null;
-  if (limit == null) {
-    return { unlimited: true, limit: null, used: getUserWordUsage(username), remaining: null, exhausted: false };
-  }
   const used = getUserWordUsage(username);
-  const remaining = Math.max(0, limit - used);
+  const reserved = reservedWords(username);
+  if (limit == null) {
+    return {
+      unlimited: true, limit: null, used, reserved: 0, remaining: null, exhausted: false,
+    };
+  }
+  const remaining = Math.max(0, limit - used - reserved);
   return {
     unlimited: false,
     limit,
     used,
+    reserved,
     remaining,
-    exhausted: used >= limit,
+    exhausted: used + reserved >= limit,
   };
 }
 
 function userQuotaAllowsTranslate(username) {
   const status = getQuotaStatus(username);
   return status.unlimited || !status.exhausted;
+}
+
+/** In-flight word holds. username -> holdId -> words. Lost on restart with the jobs. */
+const quotaReservations = new Map();
+const MAX_CONCURRENT_QUOTA_RUNS = 1;
+
+function holdRunId(holdId) {
+  const i = String(holdId || '').indexOf(':');
+  return i < 0 ? String(holdId || '') : String(holdId).slice(0, i);
+}
+
+function reservationBag(username) {
+  return quotaReservations.get(String(username || '').trim()) || null;
+}
+
+function reservedWords(username) {
+  const bag = reservationBag(username);
+  if (!bag) return 0;
+  let n = 0;
+  for (const w of bag.values()) n += w;
+  return n;
+}
+
+function activeQuotaRunIds(username) {
+  const bag = reservationBag(username);
+  const ids = new Set();
+  if (!bag) return ids;
+  for (const key of bag.keys()) ids.add(holdRunId(key));
+  return ids;
+}
+
+/**
+ * Hold estimated words for every file in a run before the job starts.
+ * Check and store happen together so two requests cannot share the same balance.
+ */
+function reserveRunQuota(username, runId, files) {
+  const user = String(username || '').trim();
+  const id = String(runId || '').trim();
+  if (!user || !id) return { ok: true, skipped: true };
+  const status = getQuotaStatus(user);
+  if (status.unlimited) return { ok: true, skipped: true };
+  const runs = activeQuotaRunIds(user);
+  if (runs.size >= MAX_CONCURRENT_QUOTA_RUNS && !runs.has(id)) {
+    return {
+      ok: false,
+      error: 'Another translation is already running on this account. Wait for it to finish, then try again.',
+      status: getQuotaStatus(user),
+    };
+  }
+  const need = (files || []).reduce((sum, f) => sum + Math.max(0, Math.round(Number(f.estimate) || 0)), 0);
+  if (need > status.remaining) {
+    return {
+      ok: false,
+      error: `This upload looks larger than your remaining word quota (${need.toLocaleString()} estimated vs ${status.remaining.toLocaleString()} left). Contact admin for more.`,
+      status,
+    };
+  }
+  let bag = quotaReservations.get(user);
+  if (!bag) {
+    bag = new Map();
+    quotaReservations.set(user, bag);
+  }
+  for (const f of files || []) {
+    bag.set(`${id}:${f.id}`, Math.max(0, Math.round(Number(f.estimate) || 0)));
+  }
+  if (!(files || []).length) bag.set(`${id}:run`, 0);
+  return { ok: true, status: getQuotaStatus(user) };
+}
+
+/** Replace one file’s hold with the real word count. Fails closed if it no longer fits. */
+function commitQuotaHold(username, holdId, words) {
+  const user = String(username || '').trim();
+  const id = String(holdId || '').trim();
+  const n = Math.max(0, Math.round(Number(words) || 0));
+  if (!user || !id) return { ok: true };
+  const row = getUserRecord(user);
+  if (!row || row.role === 'admin') return { ok: true };
+  const limit = row.wordQuota != null && row.wordQuota > 0 ? row.wordQuota : null;
+  if (limit == null) return { ok: true };
+  const used = getUserWordUsage(user);
+  let bag = quotaReservations.get(user);
+  let others = 0;
+  if (bag) {
+    for (const [key, w] of bag) {
+      if (key !== id) others += w;
+    }
+  }
+  const remainingForThis = limit - used - others;
+  if (n > remainingForThis) {
+    return { ok: false, remaining: Math.max(0, remainingForThis) };
+  }
+  if (!bag) {
+    bag = new Map();
+    quotaReservations.set(user, bag);
+  }
+  bag.set(id, n);
+  return { ok: true, remaining: remainingForThis - n };
+}
+
+function releaseQuotaReservation(username, holdId) {
+  const user = String(username || '').trim();
+  const bag = quotaReservations.get(user);
+  if (!bag) return;
+  bag.delete(String(holdId || ''));
+  if (!bag.size) quotaReservations.delete(user);
+}
+
+function releaseRunQuota(username, runId) {
+  const user = String(username || '').trim();
+  const id = String(runId || '').trim();
+  const bag = quotaReservations.get(user);
+  if (!bag || !id) return;
+  for (const key of [...bag.keys()]) {
+    if (key === id || key.startsWith(`${id}:`)) bag.delete(key);
+  }
+  if (!bag.size) quotaReservations.delete(user);
+}
+
+function _resetQuotaReservationsForTests() {
+  quotaReservations.clear();
 }
 
 function listUsers() {
@@ -642,6 +769,11 @@ module.exports = {
   userCanUseCustomer,
   getQuotaStatus,
   userQuotaAllowsTranslate,
+  reserveRunQuota,
+  commitQuotaHold,
+  releaseQuotaReservation,
+  releaseRunQuota,
+  _resetQuotaReservationsForTests,
   validatePasswordStrength,
   deleteUser,
   importUsersSnapshot,

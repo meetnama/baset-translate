@@ -7,7 +7,8 @@ const { resolveSetup } = require('./setups');
 const { recordWordStat } = require('./wordStats');
 const { decodeMultipartFilename, safeDownloadFilename } = require('../util/filenames');
 const { scanDownloadForPromptLeak } = require('../util/promptSafety');
-const { getQuotaStatus } = require('../auth');
+const { getQuotaStatus, reserveRunQuota, commitQuotaHold, releaseQuotaReservation, releaseRunQuota } = require('../auth');
+const { estimateUploadWords } = require('../util/promptSafety');
 
 /** @type {Map<string, object>} */
 const runs = new Map();
@@ -156,10 +157,49 @@ async function createRun({ files, sourceLang, targetLangs, setupId, username, qu
   ensureDirs();
   pruneOldRuns();
   const id = uuidv4();
-  const runDir = path.join(config.runsDir, id);
-  fs.mkdirSync(runDir, { recursive: true });
   const setup = resolveSetup(setupId);
+  const owner = username ? String(username).trim() : null;
+  const planned = files.map((f) => {
+    let estimate = 0;
+    try {
+      estimate = estimateUploadWords(fs.readFileSync(f.path), f.originalname) || 0;
+    } catch {
+      estimate = 0;
+    }
+    return {
+      id: uuidv4(),
+      name: decodeMultipartFilename(f.originalname),
+      status: 'queued',
+      path: f.path,
+      size: f.size,
+      estimate,
+      error: null,
+      downloadPath: null,
+      downloadName: null,
+      _projectUid: null,
+      _jobParts: [],
+    };
+  });
 
+  if (owner) {
+    const hold = reserveRunQuota(owner, id, planned);
+    if (!hold.ok) {
+      const err = new Error(hold.error);
+      err.code = 'QUOTA';
+      err.wordQuota = hold.status || null;
+      throw err;
+    }
+  }
+
+  const runDir = path.join(config.runsDir, id);
+  try {
+    fs.mkdirSync(runDir, { recursive: true });
+  } catch (err) {
+    if (owner) releaseRunQuota(owner, id);
+    throw err;
+  }
+
+  const liveQuota = owner ? getQuotaStatus(owner) : null;
   const run = {
     id,
     status: 'queued',
@@ -167,26 +207,17 @@ async function createRun({ files, sourceLang, targetLangs, setupId, username, qu
     sourceLang,
     targetLangs,
     setupId: setup.id,
-    username: username ? String(username).trim() : null,
+    username: owner,
     quotaRemainingAtStart:
-      quotaRemainingAtStart == null || Number.isNaN(Number(quotaRemainingAtStart))
-        ? null
-        : Math.max(0, Number(quotaRemainingAtStart)),
+      liveQuota && !liveQuota.unlimited
+        ? liveQuota.remaining + planned.reduce((sum, f) => sum + (f.estimate || 0), 0)
+        : quotaRemainingAtStart == null || Number.isNaN(Number(quotaRemainingAtStart))
+          ? null
+          : Math.max(0, Number(quotaRemainingAtStart)),
     singleStep: Boolean(setup.singleStep),
     createdAt: new Date().toISOString(),
     runDir,
-    files: files.map((f) => ({
-      id: uuidv4(),
-      name: decodeMultipartFilename(f.originalname),
-      status: 'queued',
-      path: f.path,
-      size: f.size,
-      error: null,
-      downloadPath: null,
-      downloadName: null,
-      _projectUid: null,
-      _jobParts: [],
-    })),
+    files: planned,
   };
 
   runs.set(id, run);
@@ -199,6 +230,7 @@ async function createRun({ files, sourceLang, targetLangs, setupId, username, qu
         f.error = publicFileError(err);
       }
     });
+    if (owner) releaseRunQuota(owner, id);
     setProgress(run);
   });
 
@@ -255,6 +287,8 @@ async function processRun(run) {
       console.error(`[run ${run.id}] file ${file.name}:`, err.message, err.detail || '');
       file.status = 'failed';
       file.error = publicFileError(err);
+    } finally {
+      if (run.username) releaseQuotaReservation(run.username, `${run.id}:${file.id}`);
     }
     setProgress(run);
   }
@@ -338,26 +372,23 @@ async function processFile(tms, run, file, mtUid, setup) {
       workflowLevels = [1, 2, 3];
     }
 
-    // Real word count from import — stop before Agent/MT if over remaining quota.
+    // Real word count from import — raise the hold to the real size before MT.
     let precheckWords = null;
-    const remainingCap =
-      run.quotaRemainingAtStart != null
-        ? run.quotaRemainingAtStart
-        : run.username
-          ? getQuotaStatus(run.username).remaining
-          : null;
     const quotaStatus = run.username ? getQuotaStatus(run.username) : { unlimited: true };
-    if (!quotaStatus.unlimited && remainingCap != null && typeof tms.runProjectWordAnalysis === 'function') {
+    if (!quotaStatus.unlimited && run.username && typeof tms.runProjectWordAnalysis === 'function') {
       try {
         const summary = await tms.runProjectWordAnalysis({ projectUid });
         precheckWords = Number(summary.totalWords) || 0;
       } catch (err) {
         console.warn('[pipeline] pre-translate word count failed:', err.message);
       }
-      if (precheckWords != null && precheckWords > remainingCap) {
-        throw new Error(
-          `This file is ${precheckWords.toLocaleString()} words, over your remaining quota (${Number(remainingCap).toLocaleString()} left). Contact admin for more.`
-        );
+      if (precheckWords != null) {
+        const commit = commitQuotaHold(run.username, `${run.id}:${file.id}`, precheckWords);
+        if (!commit.ok) {
+          throw new Error(
+            `This file is ${precheckWords.toLocaleString()} words, over your remaining quota (${Number(commit.remaining).toLocaleString()} left). Contact admin for more.`
+          );
+        }
       }
     }
 
@@ -458,21 +489,20 @@ async function processFile(tms, run, file, mtUid, setup) {
       if (typeof tms.runProjectWordAnalysis === 'function') {
         const summary = await tms.runProjectWordAnalysis({ projectUid });
         const words = Number(summary.totalWords) || precheckWords || 0;
-        if (
-          !quotaStatus.unlimited &&
-          remainingCap != null &&
-          words > remainingCap
-        ) {
-          for (const d of saved) {
-            try {
-              fs.unlinkSync(d.path);
-            } catch {
-              /* ignore */
+        if (run.username && !quotaStatus.unlimited) {
+          const commit = commitQuotaHold(run.username, `${run.id}:${file.id}`, words);
+          if (!commit.ok) {
+            for (const d of saved) {
+              try {
+                fs.unlinkSync(d.path);
+              } catch {
+                /* ignore */
+              }
             }
+            throw new Error(
+              `This file is ${words.toLocaleString()} words, over your remaining quota (${Number(commit.remaining).toLocaleString()} left). Contact admin for more.`
+            );
           }
-          throw new Error(
-            `This file is ${words.toLocaleString()} words, over your remaining quota (${Number(remainingCap).toLocaleString()} left). Contact admin for more.`
-          );
         }
         recordWordStat({
           runId: run.id,

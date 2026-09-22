@@ -217,6 +217,9 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
     res.status(202).json(run);
   } catch (err) {
     cleanupUploads(files);
+    if (err && err.code === 'QUOTA') {
+      return res.status(403).json({ error: err.message, wordQuota: err.wordQuota || undefined });
+    }
     console.error('/translate', err.message);
     res.status(500).json({ error: 'Couldn’t start translation. Please try again.' });
   }

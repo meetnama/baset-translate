@@ -55,7 +55,7 @@ Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
 | `requireAuth` / `requireAdmin` | Middleware |
 | `listUsers` / `createUser` / `setUserPassword` / `setUserRole` / `setUserCustomers` / `setUserWordQuota` / `deleteUser` | Admin CRUD |
 | `importUsersSnapshot` | Replace all users from local snapshot (keeps hashes) |
-| `getQuotaStatus` / `userQuotaAllowsTranslate` | Per-user word limit check |
+| `getQuotaStatus` / `userQuotaAllowsTranslate` / `reserveRunQuota` / `commitQuotaHold` | Word limit includes in-flight holds; one running job per limited user; real count replaces the estimate before MT |
 | `getAllowedCustomerIds` / `userCanUseCustomer` / `stripCustomerFromUsers` | Lock a user to one or more customers |
 | `authEnabled` / `isAdmin` | Gates |
 
@@ -68,7 +68,7 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 |---|---|
 | multer `storage` / `uuidSlice` / `cleanupUploads` | Unique upload names; unlink on fail |
 | `decodeMultipartFilename` (`util/filenames.js`) | Fix UTF-8 upload names (Arabic/CJK/etc.) after multer Latin-1 |
-| `scanUploadForPromptInjection` / `estimateUploadWords` (`util/promptSafety.js`) | Reject prompt-injection text; early quota estimate (text count + Office/binary size ceiling) |
+| `scanUploadForPromptInjection` / `estimateUploadWords` (`util/promptSafety.js`) | Reject prompt-injection text after extracting Office/PDF/RTF to plain text (DOCX cannot skip the check); early quota estimate |
 | `GET /meta` | Languages + extensions + `customers` (filtered by user lock) |
 | `POST /translate` | Start run (`customerId`); reject empty/odd files; quota + injection gates |
 | `GET /translate/:id` | Poll public run |
@@ -79,7 +79,7 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 
 | Symbol | Role |
 |---|---|
-| `createRun` | Queue run, kick `processRun`; stores `quotaRemainingAtStart` |
+| `createRun` | Queue run, kick `processRun`; reserves estimated words before start (`reserveRunQuota`) |
 | `getRun` / `getRunInternal` / `publicRun` | Status for API |
 | `processRun` / `processFile` | Customer template; one-pass = 1 download; Full workflow = 3-step; word-count gate before MT; download leak scan |
 | `publicDownloads` | Hide extra step files for one-pass jobs |
