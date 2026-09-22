@@ -2,6 +2,7 @@ const path = require('path');
 const fs = require('fs');
 const express = require('express');
 const cors = require('cors');
+const { publicErrorText } = require('./util/publicError');
 const config = require('./config');
 const { authEnabled, requireAuth } = require('./auth');
 const authRoutes = require('./routes/auth');
@@ -108,10 +109,21 @@ app.use((err, _req, res, _next) => {
     return res.status(400).json({ error: `File exceeds the ${config.maxUploadMb} MB limit.` });
   }
   if (err && err.name === 'MulterError') {
-    return res.status(400).json({ error: 'Invalid upload. Please try again.' });
+    const code = err.code || 'UPLOAD';
+    const detail = publicErrorText(err.message, '');
+    if (code === 'LIMIT_FILE_COUNT' || code === 'LIMIT_UNEXPECTED_FILE') {
+      return res.status(400).json({ error: 'Too many files in one upload. Send up to 20 files at a time.' });
+    }
+    return res.status(400).json({
+      error: detail
+        ? `Upload was rejected (${code}): ${detail}`
+        : `Upload was rejected (${code}).`,
+    });
   }
   console.error(err);
-  res.status(500).json({ error: 'Something went wrong.' });
+  res.status(500).json({
+    error: publicErrorText(err && err.message, 'The server hit an unexpected error. Try again.'),
+  });
 });
 
 const DEFAULT_AUTH_SECRET = 'dev-change-me-lingotrust-translate';

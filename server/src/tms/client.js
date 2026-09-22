@@ -1,5 +1,6 @@
 const { TMS_FILE_EXTENSIONS, FALLBACK_LANGUAGES } = require('./formats');
 const { decodeMultipartFilename } = require('../util/filenames');
+const { upstreamErrorMessage, publicErrorText } = require('../util/publicError');
 
 /**
  * Live TMS client. Credentials stay on the server only.
@@ -105,7 +106,7 @@ class LiveTmsClient {
       } catch {
         /* ignore */
       }
-      const err = new Error(`Upstream request failed (${res.status})`);
+      const err = new Error(upstreamErrorMessage(res.status, detail));
       err.status = res.status;
       err.detail = detail;
       throw err;
@@ -657,11 +658,8 @@ function asyncFailureMessage(status) {
   ]
     .map((v) => (v == null ? '' : String(v).trim()))
     .find((s) => s.length > 0);
-  let msg = raw || 'Translation processing failed.';
-  msg = msg
-    .replace(/\bphrase\b/gi, 'translation service')
-    .replace(/\bmemsource\b/gi, 'translation service');
-  if (msg.length > 400) msg = `${msg.slice(0, 397)}...`;
+  let msg = raw || 'The translation service failed and did not give a reason.';
+  msg = publicErrorText(msg, 'The translation service failed and did not give a reason.');
   return msg;
 }
 

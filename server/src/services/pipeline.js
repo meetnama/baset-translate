@@ -6,9 +6,9 @@ const { createTmsClient } = require('../tms');
 const { resolveSetup } = require('./setups');
 const { recordWordStat } = require('./wordStats');
 const { decodeMultipartFilename, safeDownloadFilename } = require('../util/filenames');
-const { scanDownloadForPromptLeak, sanitizeUploadBuffer, canonicalText, segmentFollowedInstructions } = require('../util/promptSafety');
+const { scanDownloadForPromptLeak, sanitizeUploadBuffer, canonicalText, segmentFollowedInstructions, estimateUploadWords } = require('../util/promptSafety');
 const { getQuotaStatus, reserveRunQuota, commitQuotaHold, releaseQuotaReservation, releaseRunQuota } = require('../auth');
-const { estimateUploadWords } = require('../util/promptSafety');
+const { publicErrorText } = require('../util/publicError');
 
 /** @type {Map<string, object>} */
 const runs = new Map();
@@ -27,26 +27,38 @@ function isEmptyUploadBuffer(buffer) {
   return false;
 }
 
-/** Safe message for the Progress UI (real reason, no vendor names). */
 function publicFileError(err) {
-  const msg = String(err?.message || '').trim();
-  if (!msg) return 'Couldn’t translate this file. Please try again.';
+  const raw = String(err?.message || '').trim();
+  const detailReason = err?.detail ? reasonFromDetail(err.detail) : '';
+  let msg = raw;
+  if (/^upstream request failed/i.test(raw) && detailReason) msg = detailReason;
+  if (!msg && detailReason) msg = detailReason;
   if (msg === 'File is empty') {
     return 'This file is empty. Add content and try again.';
   }
-  let out = msg
-    .replace(/\bphrase\b/gi, 'translation service')
-    .replace(/\bmemsource\b/gi, 'translation service');
-  // Legacy short timeout string from older builds
-  if (/^Processing timed out$/i.test(out)) {
-    out =
-      'Translation timed out while waiting for the translation service. The file may still be within size limits — try again, or split a very large deck.';
+  if (/^Processing timed out$/i.test(msg)) {
+    msg = 'Translation timed out while waiting for the translation service. The file may still be within size limits. Try again, or split a very large deck.';
   }
-  if (/^Processing failed$/i.test(out)) {
-    out = 'Translation processing failed. Check the file and try again.';
+  if (/^Processing failed$/i.test(msg)) {
+    msg = detailReason
+      ? `The translation service failed this file: ${detailReason}`
+      : 'The translation service failed this file and did not give a reason.';
   }
-  if (out.length > 400) out = `${out.slice(0, 397)}...`;
-  return out;
+  if (/^No workflow-step downloads produced$/i.test(msg)) {
+    msg = 'Translation finished, but the service did not return a file to download.';
+  }
+  if (/^Empty download at workflow step (\d+)$/i.test(msg)) {
+    const step = msg.match(/(\d+)/)?.[1] || '';
+    msg = `The translation service returned an empty file at step ${step}.`;
+  }
+  return publicErrorText(msg, 'This file failed and the server did not return a reason.');
+}
+
+function reasonFromDetail(detail) {
+  if (detail && typeof detail === 'object') {
+    return detail.errorDescription || detail.errorMessage || detail.message || detail.errorCode || '';
+  }
+  return '';
 }
 
 /** TMS project name: project_YYYY-MM-DD_HH-mm-ss_<shortId> */

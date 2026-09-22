@@ -205,7 +205,7 @@ function LoginScreen({ onLoggedIn }) {
         body: JSON.stringify({ username, password }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || 'Couldn’t sign in.');
+      if (!res.ok) throw new Error(data.error || `Sign-in failed (HTTP ${res.status}). Check the username and password.`);
       onLoggedIn({ user: data.user, isAdmin: !!data.isAdmin });
     } catch (err) {
       setError(err.message || 'Couldn’t sign in.');
@@ -1066,8 +1066,13 @@ export default function App() {
           setTargetLangs(fallback ? [fallback] : []);
         }
       })
-      .catch(() => {
-        if (!cancelled) setMetaError('Couldn’t load language list. Refresh the page.');
+      .catch((err) => {
+        if (cancelled) return;
+        if (err?.message === 'Please sign in.') {
+          setMetaError('Your sign-in expired. Sign in again.');
+          return;
+        }
+        setMetaError(err?.message || 'Couldn’t load the language list. Refresh the page.');
       });
     return () => { cancelled = true; };
   }, [signedIn, showAdmin]);
@@ -1164,7 +1169,7 @@ export default function App() {
       }
       if (!res.ok) {
         if (data.wordQuota) setWordQuota(data.wordQuota);
-        throw new Error(data.error || 'Couldn’t start translation.');
+        throw new Error(data.error || `Couldn’t start translation (HTTP ${res.status}).`);
       }
       setRun(data);
       pollRef.current = setInterval(async () => {
@@ -1179,7 +1184,7 @@ export default function App() {
             setIsAdmin(false);
             return;
           }
-          if (!s.ok) throw new Error(body.error || 'Status check failed');
+          if (!s.ok) throw new Error(body.error || `Couldn’t check translation progress (HTTP ${s.status}).`);
           setRun(body);
           if (body.status === 'completed' || body.status === 'failed') {
             clearInterval(pollRef.current);
@@ -1191,12 +1196,12 @@ export default function App() {
           clearInterval(pollRef.current);
           pollRef.current = null;
           setBusy(false);
-          setError(err.message || 'Something went wrong.');
+          setError(err.message || 'Translation stopped, and no reason was returned.');
         }
       }, 1200);
     } catch (err) {
       setBusy(false);
-      setError(err.message || 'Something went wrong.');
+      setError(err.message || 'Translation stopped, and no reason was returned.');
     }
   };
 
@@ -1539,7 +1544,8 @@ export default function App() {
             {run.status === 'completed'
               ? 'Done — download your files below.'
               : run.status === 'failed'
-                ? 'Some files couldn’t be translated.'
+                ? ((run.files || []).map((f) => f.error).filter(Boolean).join(' ')
+                  || 'The translation failed, and no reason was returned.')
                 : 'Working on your files…'}
           </p>
           <div className="progress-wrap">

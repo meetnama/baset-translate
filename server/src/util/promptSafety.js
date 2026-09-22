@@ -397,7 +397,7 @@ function scanUploadForPromptInjection(buffer, fileName) {
   if (hit) {
     return {
       ok: false,
-      error: `${fileName || 'This file'} looks unsafe to translate. Remove hidden instructions and try again.`,
+      error: `${fileName || 'This file'} contains instructions aimed at the translator. Remove that text and upload the file again.`,
     };
   }
   return { ok: true };
@@ -435,7 +435,7 @@ function scanDownloadForPromptLeak(buffer, fileName, sourceText) {
   if (hit) {
     return {
       ok: false,
-      error: 'Translation output looked unsafe and was blocked. Try again with clean source text.',
+      error: 'The translated file contained instruction text, so the download was blocked. Remove instructions from the source and try again.',
     };
   }
   if (sourceText) {

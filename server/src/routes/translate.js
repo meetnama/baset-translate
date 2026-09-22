@@ -14,6 +14,7 @@ const {
   userQuotaAllowsTranslate,
   getQuotaStatus,
 } = require('../auth');
+const { publicErrorText } = require('../util/publicError');
 const { decodeMultipartFilename } = require('../util/filenames');
 const {
   scanUploadForPromptInjection,
@@ -53,9 +54,10 @@ function cleanupUploads(files) {
 }
 
 function getAccessibleRun(req, res) {
+  const missing = 'This translation was not found. It may have expired. Start a new one.';
   const run = getRunInternal(req.params.id);
   if (!run) {
-    res.status(404).json({ error: 'Not found.' });
+    res.status(404).json({ error: missing });
     return null;
   }
   if (!canAccessRun(run, {
@@ -63,8 +65,8 @@ function getAccessibleRun(req, res) {
     username: req.user,
     isAdmin: !!req.isAdmin,
   })) {
-    // Do not disclose that another user's run exists.
-    res.status(404).json({ error: 'Not found.' });
+    // Same wording either way, so one user cannot tell that another user's job exists.
+    res.status(404).json({ error: missing });
     return null;
   }
   return run;
@@ -97,7 +99,12 @@ router.get('/meta', async (req, res) => {
     });
   } catch (err) {
     console.error('/meta', err.message);
-    res.status(503).json({ error: 'Service temporarily unavailable.' });
+    res.status(503).json({
+      error: publicErrorText(
+        err.message,
+        'Couldn’t load the language list because the translation service did not respond.'
+      ),
+    });
   }
 });
 
@@ -162,7 +169,7 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
         }
       } catch {
         cleanupUploads(files);
-        return res.status(400).json({ error: `Couldn’t read ${f.originalname}.` });
+        return res.status(400).json({ error: `Couldn’t read ${f.originalname}. The file may be damaged or still open in another program.` });
       }
     }
 
@@ -225,7 +232,9 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
       return res.status(403).json({ error: err.message, wordQuota: err.wordQuota || undefined });
     }
     console.error('/translate', err.message);
-    res.status(500).json({ error: 'Couldn’t start translation. Please try again.' });
+    res.status(500).json({
+      error: publicErrorText(err.message, 'Couldn’t start translation, and the server did not return a reason.'),
+    });
   }
 });
 
@@ -240,18 +249,23 @@ router.get('/translate/:id/files/:fileId/download', (req, res) => {
   if (!run) return;
   const file = run.files.find((f) => f.id === req.params.fileId);
   if (!file || file.status !== 'ready') {
-    return res.status(409).json({ error: 'File is not ready yet.' });
+    const why = file?.error
+      ? file.error
+      : file?.status === 'failed'
+        ? 'This file failed. See the reason on the Progress card.'
+        : 'This file is still translating. Wait until it finishes, then download.';
+    return res.status(409).json({ error: why });
   }
 
   const downloadId = req.query.downloadId ? String(req.query.downloadId) : null;
   if (downloadId && Array.isArray(file.downloads)) {
     const item = file.downloads.find((d) => d.id === downloadId);
-    if (!item?.path) return res.status(404).json({ error: 'Download not found.' });
+    if (!item?.path) return res.status(404).json({ error: 'That download is no longer available. Run the translation again.' });
     return res.download(item.path, item.name || file.name);
   }
 
   if (!file.downloadPath) {
-    return res.status(409).json({ error: 'File is not ready yet.' });
+    return res.status(409).json({ error: 'The translated file is missing on the server. Run the translation again.' });
   }
   res.download(file.downloadPath, file.downloadName || file.name);
 });
@@ -278,7 +292,7 @@ router.get('/translate/:id/download-all', (req, res) => {
       entries.push({ path: f.downloadPath, name: f.downloadName || f.name });
     }
   }
-  if (!entries.length) return res.status(409).json({ error: 'No files ready yet.' });
+  if (!entries.length) return res.status(409).json({ error: 'Nothing is ready to download yet. Wait until a file finishes, or check the reason if it failed.' });
 
   const usedNames = new Set();
   const uniqueZipName = (name) => {
