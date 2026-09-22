@@ -178,6 +178,168 @@ function decodeXmlEntities(text) {
     });
 }
 
+function normalizeForScan(text) {
+  const folded = decodeXmlEntities(text)
+    .normalize('NFKC')
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g, '')
+    .replace(/[ІіӀ]/g, 'I')
+    .replace(/[Ѕѕ]/g, 'S')
+    .replace(/[ОоΟο]/g, 'o')
+    .replace(/[Аа]/g, 'A')
+    .replace(/[ЕеΕε]/g, 'E')
+    .replace(/[РрΡρ]/g, 'P')
+    .replace(/[ТтΤτ]/g, 'T')
+    .replace(/[ХхΧχ]/g, 'X')
+    .replace(/[Уу]/g, 'Y')
+    .replace(/[КкΚκ]/g, 'K')
+    .replace(/[МмΜμ]/g, 'M')
+    .replace(/[НнΗη]/g, 'H');
+  return folded.replace(/\\n/g, '\n');
+}
+
+const DEST_RE = /\b(?:https?:\/\/|www\.)[^\s<>"')\]]+|\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/gi;
+
+function wordCount(text) {
+  return String(text || '').split(/\s+/).filter(Boolean).length;
+}
+
+/** Block results that add a new link or grow like a dumped instruction sheet. */
+function structuralOutputProblem(sourceText, targetText) {
+  const src = normalizeForScan(sourceText).toLowerCase();
+  const tgt = normalizeForScan(targetText);
+  const srcDest = new Set((src.match(DEST_RE) || []).map((item) => item.toLowerCase()));
+  DEST_RE.lastIndex = 0;
+  const novel = (tgt.match(DEST_RE) || []).filter((item) => !srcDest.has(item.toLowerCase()));
+  DEST_RE.lastIndex = 0;
+  if (novel.length) {
+    return 'Translation output added a link or email address that was not in the source file and was blocked.';
+  }
+  const sourceWords = wordCount(src);
+  const targetWords = wordCount(tgt);
+  if (targetWords > sourceWords * 3 + 200) {
+    return 'Translation output was much longer than the source file and was blocked.';
+  }
+  return null;
+}
+
+function crc32(buf) {
+  let c = ~0;
+  for (let i = 0; i < buf.length; i += 1) {
+    c ^= buf[i];
+    for (let k = 0; k < 8; k += 1) c = (c >>> 1) ^ (0xedb88320 & -(c & 1));
+  }
+  return (~c) >>> 0;
+}
+
+function readZipEntries(buffer) {
+  if (!buffer || buffer.length < 30 || buffer.readUInt32LE(0) !== 0x04034b50) return [];
+  const entries = [];
+  let offset = 0;
+  while (offset + 30 <= buffer.length) {
+    if (buffer.readUInt32LE(offset) !== 0x04034b50) break;
+    const flags = buffer.readUInt16LE(offset + 6);
+    const method = buffer.readUInt16LE(offset + 8);
+    let compSize = buffer.readUInt32LE(offset + 18);
+    const nameLen = buffer.readUInt16LE(offset + 26);
+    const extraLen = buffer.readUInt16LE(offset + 28);
+    const nameStart = offset + 30;
+    const nameEnd = nameStart + nameLen;
+    if (nameEnd > buffer.length) break;
+    const name = buffer.subarray(nameStart, nameEnd).toString('utf8');
+    const dataStart = nameEnd + extraLen;
+    if (dataStart > buffer.length) break;
+    if ((flags & 0x8) && compSize === 0) {
+      const next = buffer.indexOf(Buffer.from([0x50, 0x4b]), dataStart);
+      compSize = next > dataStart ? next - dataStart : 0;
+    }
+    const dataEnd = Math.min(buffer.length, dataStart + compSize);
+    const compressed = buffer.subarray(dataStart, dataEnd);
+    offset = dataEnd;
+    if (flags & 0x8) {
+      if (offset + 4 <= buffer.length && buffer.readUInt32LE(offset) === 0x08074b50) offset += 4;
+      offset += 12;
+    }
+    let data = null;
+    try {
+      if (method === 0) data = Buffer.from(compressed);
+      else if (method === 8) data = zlib.inflateRawSync(compressed);
+    } catch {
+      data = null;
+    }
+    if (data) entries.push({ name, data });
+  }
+  return entries;
+}
+
+function writeZip(entries) {
+  const locals = [];
+  const centrals = [];
+  let offset = 0;
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name);
+    const data = entry.data;
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(20, 6);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(name.length, 26);
+    locals.push(Buffer.concat([local, name, data]));
+    const central = Buffer.alloc(46);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE(offset, 42);
+    centrals.push(Buffer.concat([central, name]));
+    offset += 30 + name.length + data.length;
+  }
+  const centralDir = Buffer.concat(centrals);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralDir.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, centralDir, end]);
+}
+
+function cleanOfficeXml(name, data) {
+  if (!/\.xml$/i.test(name)) return data;
+  let s = data.toString('utf8');
+  if (/comments|\/people\.xml$|customXml\/|glossary/i.test(name)) {
+    s = s.replace(/>([^<]*)</g, '><');
+  } else if (OFFICE_TEXT_PART.test(name) || /header|footer|slide|notesSlide|sharedStrings|sheet\d/i.test(name)) {
+    s = s.replace(/<w:instrText\b[^>]*>[\s\S]*?<\/w:instrText>/gi, '');
+    s = s.replace(/<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*<w:vanish\s*\/>[\s\S]*?<\/w:r>/gi, '');
+    s = s.replace(/[\u200B-\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g, '');
+  }
+  return Buffer.from(s, 'utf8');
+}
+
+/** Remove hidden fields, comments, and custom XML before the file is translated or downloaded. */
+function sanitizeUploadBuffer(buffer, fileName) {
+  const ext = fileExt(fileName);
+  if (!OFFICE_ZIP_EXTS.has(ext)) return buffer;
+  try {
+    const entries = readZipEntries(buffer);
+    if (!entries.length) return buffer;
+    const next = writeZip(entries.map((entry) => ({
+      name: entry.name,
+      data: cleanOfficeXml(entry.name, entry.data),
+    })));
+    return next.length ? next : buffer;
+  } catch {
+    return buffer;
+  }
+}
+
 /** Same visible text for TXT, Office, PDF, and RTF before injection / leak checks. */
 function canonicalText(buffer, fileName) {
   const ext = fileExt(fileName);
@@ -188,9 +350,13 @@ function canonicalText(buffer, fileName) {
   return decodeXmlEntities(parts.filter(Boolean).join('\n')).replace(/\\n/g, '\n');
 }
 
+function scannedText(buffer, fileName) {
+  return normalizeForScan(canonicalText(buffer, fileName));
+}
+
 /** @returns {{ ok: true } | { ok: false, error: string }} */
 function scanUploadForPromptInjection(buffer, fileName) {
-  const text = canonicalText(buffer, fileName);
+  const text = scannedText(buffer, fileName);
   const hit = findMatchingPattern(text, INJECTION_PATTERNS);
   if (hit) {
     return {
@@ -224,17 +390,21 @@ function estimateUploadWords(buffer, fileName) {
 }
 
 /** @returns {{ ok: true } | { ok: false, error: string }} */
-function scanDownloadForPromptLeak(buffer, fileName) {
+function scanDownloadForPromptLeak(buffer, fileName, sourceText) {
   const ext = fileExt(fileName);
   const textual = TEXT_EXTS.has(ext) || OFFICE_ZIP_EXTS.has(ext) || ext === 'pdf' || ext === 'rtf';
   if (!textual) return { ok: true };
-  const text = canonicalText(buffer, fileName);
+  const text = scannedText(buffer, fileName);
   const hit = findMatchingPattern(text, LEAK_PATTERNS);
   if (hit) {
     return {
       ok: false,
       error: 'Translation output looked unsafe and was blocked. Try again with clean source text.',
     };
+  }
+  if (sourceText) {
+    const structural = structuralOutputProblem(sourceText, text);
+    if (structural) return { ok: false, error: structural };
   }
   return { ok: true };
 }
@@ -243,5 +413,7 @@ module.exports = {
   scanUploadForPromptInjection,
   scanDownloadForPromptLeak,
   estimateUploadWords,
+  sanitizeUploadBuffer,
+  canonicalText,
   TEXT_EXTS,
 };

@@ -68,7 +68,7 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 |---|---|
 | multer `storage` / `uuidSlice` / `cleanupUploads` | Unique upload names; unlink on fail |
 | `decodeMultipartFilename` (`util/filenames.js`) | Fix UTF-8 upload names (Arabic/CJK/etc.) after multer Latin-1 |
-| `scanUploadForPromptInjection` / `estimateUploadWords` (`util/promptSafety.js`) | Reject prompt-injection text after extracting Office/PDF/RTF to plain text (DOCX cannot skip the check); early quota estimate |
+| `scanUploadForPromptInjection` / `estimateUploadWords` / `sanitizeUploadBuffer` (`util/promptSafety.js`) | Extract Office/PDF/RTF text; strip hidden fields, comments, and custom XML; reject injection text; block downloads that add a new link or grow like a dumped instruction sheet |
 | `GET /meta` | Languages + extensions + `customers` (filtered by user lock) |
 | `POST /translate` | Start run (`customerId`); reject empty/odd files; quota + injection gates |
 | `GET /translate/:id` | Poll public run |

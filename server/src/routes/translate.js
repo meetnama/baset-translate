@@ -18,6 +18,7 @@ const { decodeMultipartFilename } = require('../util/filenames');
 const {
   scanUploadForPromptInjection,
   estimateUploadWords,
+  sanitizeUploadBuffer,
 } = require('../util/promptSafety');
 
 const router = express.Router();
@@ -146,11 +147,14 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
         return res.status(400).json({ error: `${f.originalname} is empty.` });
       }
       try {
-        const buf = fs.readFileSync(f.path);
+        let buf = fs.readFileSync(f.path);
         if (isEmptyUploadBuffer(buf)) {
           cleanupUploads(files);
           return res.status(400).json({ error: `${f.originalname} is empty. Add content and try again.` });
         }
+        buf = sanitizeUploadBuffer(buf, f.originalname);
+        fs.writeFileSync(f.path, buf);
+        f.size = buf.length;
         const inj = scanUploadForPromptInjection(buf, f.originalname);
         if (!inj.ok) {
           cleanupUploads(files);

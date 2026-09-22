@@ -6,7 +6,7 @@ const { createTmsClient } = require('../tms');
 const { resolveSetup } = require('./setups');
 const { recordWordStat } = require('./wordStats');
 const { decodeMultipartFilename, safeDownloadFilename } = require('../util/filenames');
-const { scanDownloadForPromptLeak } = require('../util/promptSafety');
+const { scanDownloadForPromptLeak, sanitizeUploadBuffer, canonicalText } = require('../util/promptSafety');
 const { getQuotaStatus, reserveRunQuota, commitQuotaHold, releaseQuotaReservation, releaseRunQuota } = require('../auth');
 const { estimateUploadWords } = require('../util/promptSafety');
 
@@ -300,6 +300,7 @@ async function processFile(tms, run, file, mtUid, setup) {
     if (isEmptyUploadBuffer(buffer)) {
       throw new Error('File is empty');
     }
+    const sourceText = canonicalText(buffer, file.name);
     const projectName = projectDateTimeName();
     const useTemplate = Boolean(setup?.useTemplate);
     const templateUid = setup?.templateUid || '';
@@ -452,7 +453,8 @@ async function processFile(tms, run, file, mtUid, setup) {
         if (!downloaded?.buffer?.length) {
           throw new Error(`Empty download at workflow step ${level}`);
         }
-        const leak = scanDownloadForPromptLeak(downloaded.buffer, downloaded.fileName || file.name);
+        const cleaned = sanitizeUploadBuffer(downloaded.buffer, downloaded.fileName || file.name);
+        const leak = scanDownloadForPromptLeak(cleaned, downloaded.fileName || file.name, sourceText);
         if (!leak.ok) {
           throw new Error(leak.error);
         }
@@ -461,7 +463,7 @@ async function processFile(tms, run, file, mtUid, setup) {
           ? `${base}_${lang}${outExt}`
           : `${base}_v${level}_${lang}${outExt}`;
         const outPath = path.join(run.runDir, `${file.id}-${outName}`);
-        fs.writeFileSync(outPath, downloaded.buffer);
+        fs.writeFileSync(outPath, cleaned);
         saved.push({
           id: uuidv4(),
           name: outName,
