@@ -50,6 +50,8 @@ function armWatchdog() {
 }
 
 const { createCorsOriginChecker } = require('./util/corsAllowlist');
+const { useSharedLoginLimitStore } = require('./util/loginRateLimit');
+useSharedLoginLimitStore(path.join(config.dataDir, 'login-rate-limit.json'));
 
 app.use(
   cors({

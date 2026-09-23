@@ -154,7 +154,30 @@ function pdfText(buffer) {
 
 function rtfText(buffer) {
   if (!buffer || !buffer.length) return '';
-  let s = buffer.toString('latin1');
+  const raw = buffer.toString('latin1');
+  let s = '';
+  for (let i = 0; i < raw.length; i += 1) {
+    if (raw[i] === '\\') {
+      const bin = /^\\bin(\d+) ?/i.exec(raw.slice(i));
+      if (bin) {
+        const n = Number(bin[1]) || 0;
+        i += bin[0].length + n - 1;
+        s += ' ';
+        continue;
+      }
+    }
+    s += raw[i];
+  }
+  s = s.replace(/\\u(-?\d+)\??/g, (_, n) => {
+    let c = Number(n);
+    if (c < 0) c += 65536;
+    if (!Number.isFinite(c) || c < 0 || c > 0x10ffff) return ' ';
+    try {
+      return String.fromCodePoint(c);
+    } catch {
+      return ' ';
+    }
+  });
   s = s.replace(/\\'([0-9a-f]{2})/gi, (_, h) => String.fromCharCode(parseInt(h, 16)));
   s = s.replace(/\\par[d]?/gi, '\n').replace(/\\[a-z]+-?\d* ?/gi, ' ');
   return s.replace(/[{}]/g, ' ');
@@ -208,6 +231,14 @@ function plainWords(text) {
 
 function wordCount(text) {
   return plainWords(text).length;
+}
+
+/** Charge the higher of our punctuation-aware count and the service count. */
+function billableWordCount(sourceText, remoteWords) {
+  const local = wordCount(sourceText);
+  const remote = Number(remoteWords);
+  if (!Number.isFinite(remote) || remote <= 0) return local;
+  return Math.max(local, Math.round(remote));
 }
 
 /**
@@ -405,24 +436,50 @@ function scanUploadForPromptInjection(buffer, fileName) {
 
 /**
  * Rough source-word estimate for early quota checks.
- * Text files: whitespace split. Other types: readable tokens + size ceiling
- * so oversized Office uploads can be refused before a TMS job starts.
+ * Text, RTF, Office, and PDF use the same letter/number split, so
+ * "Why,is,my,quota" counts as four words, not one.
+ * Office/PDF also keep a size ceiling so a huge file can be refused early.
  */
 function estimateUploadWords(buffer, fileName) {
   if (!buffer || !buffer.length) return 0;
   const ext = fileExt(fileName);
-  if (TEXT_EXTS.has(ext) || ext === 'rtf') {
-    const text = canonicalText(buffer, fileName).replace(/^\uFEFF/, '');
-    return text.split(/\s+/).filter(Boolean).length;
+  if (ext === 'rtf') return wordCount(rtfText(buffer));
+  if (TEXT_EXTS.has(ext)) {
+    return wordCount(canonicalText(buffer, fileName).replace(/^\uFEFF/, ''));
   }
-  const extracted = OFFICE_ZIP_EXTS.has(ext) || ext === 'pdf' ? canonicalText(buffer, fileName) : '';
-  const fromExtracted = extracted ? extracted.split(/\s+/).filter(Boolean).length : 0;
+  if (OFFICE_ZIP_EXTS.has(ext) || ext === 'pdf') {
+    const extracted = ext === 'pdf' ? pdfText(buffer) : officeZipText(buffer);
+    const fromSize = Math.ceil(buffer.length / 50);
+    return Math.max(wordCount(extracted), fromSize);
+  }
   const sample = readableSample(buffer, 1_000_000);
   const tokens = sample.match(/[A-Za-z\u00C0-\u024F\u0600-\u06FF]{3,}/g) || [];
   const fromTokens = tokens.length ? Math.ceil(tokens.length * 1.25) : 0;
-  // Loose upper bound from bytes (compressed Office/PDF). Prefers blocking over-quota starts.
   const fromSize = Math.ceil(buffer.length / 50);
-  return Math.max(fromExtracted, fromTokens, fromSize);
+  return Math.max(fromTokens, fromSize);
+}
+
+/** RTF is turned into plain text before the job so the service does not crash on it. */
+function rtfToPlainTextBuffer(buffer) {
+  const text = rtfText(buffer).replace(/\u0000/g, ' ').trim();
+  return Buffer.from(text, 'utf8');
+}
+
+const ACTIVE_MARKUP_EXTS = new Set(['html', 'htm', 'xhtml', 'svg', 'xml']);
+
+/** Strip scripts and click-handlers from a translated page before it is saved. */
+function neutralizeActiveMarkup(buffer, fileName) {
+  const ext = fileExt(fileName);
+  if (!ACTIVE_MARKUP_EXTS.has(ext) || !buffer || !buffer.length) return buffer;
+  let s = buffer.toString('utf8');
+  s = s.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '');
+  s = s.replace(/<script\b[^>]*\/?>/gi, '');
+  s = s.replace(/<iframe\b[^>]*>[\s\S]*?<\/iframe>/gi, '');
+  s = s.replace(/<(?:object|embed)\b[^>]*>[\s\S]*?<\/(?:object|embed)>/gi, '');
+  s = s.replace(/<(?:object|embed|link)\b[^>]*\/?>/gi, '');
+  s = s.replace(/\son\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+  s = s.replace(/javascript\s*:/gi, '');
+  return Buffer.from(s, 'utf8');
 }
 
 /** @returns {{ ok: true } | { ok: false, error: string }} */
@@ -457,6 +514,10 @@ module.exports = {
   estimateUploadWords,
   sanitizeUploadBuffer,
   canonicalText,
+  wordCount,
+  billableWordCount,
+  rtfToPlainTextBuffer,
+  neutralizeActiveMarkup,
   segmentFollowedInstructions,
   TEXT_EXTS,
 };

@@ -453,14 +453,36 @@ const COMMON_PASSWORDS = new Set(
   ].map((s) => s.toLowerCase())
 );
 
+function isRepetitivePassword(password) {
+  const s = String(password || '').toLowerCase();
+  if (/(.)\1{3,}/.test(s)) return true;
+  for (let size = 1; size <= 4; size += 1) {
+    const unit = s.slice(0, size);
+    if (!unit) continue;
+    const repeats = Math.floor(s.length / size);
+    if (repeats >= 3 && unit.repeat(repeats) === s.slice(0, size * repeats) && size * repeats === s.length) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function passwordContainsUsername(password, username) {
+  const p = String(password || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const u = String(username || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (u.length < 3 || p.length < 3) return false;
+  return p.includes(u) || u.includes(p);
+}
+
 /**
- * New / changed passwords: 8+ chars, upper+lower, number, special char,
- * and not on the common-password list.
+ * New / changed passwords: 12+ chars, upper+lower, number, special char,
+ * not common, not the username, and not a repeated pattern.
+ * Stored with Node scrypt (a strong adaptive hash, same class as bcrypt).
  */
-function validatePasswordStrength(password) {
+function validatePasswordStrength(password, username) {
   const p = String(password || '');
-  if (p.length < 8) {
-    return { ok: false, error: 'Password must be at least 8 characters.' };
+  if (p.length < 12) {
+    return { ok: false, error: 'Password must be at least 12 characters.' };
   }
   if (!/[a-z]/.test(p) || !/[A-Z]/.test(p)) {
     return {
@@ -477,11 +499,14 @@ function validatePasswordStrength(password) {
       error: 'Password must include a special character (e.g. ! @ # $).',
     };
   }
-  if (COMMON_PASSWORDS.has(p.toLowerCase())) {
+  if (COMMON_PASSWORDS.has(p.toLowerCase()) || isRepetitivePassword(p)) {
     return {
       ok: false,
-      error: 'This password is too common. Choose something harder to guess.',
+      error: 'This password is too common or too easy to guess. Choose something harder.',
     };
+  }
+  if (passwordContainsUsername(p, username)) {
+    return { ok: false, error: 'Password must not contain the username.' };
   }
   return { ok: true };
 }
@@ -494,7 +519,7 @@ function createUser({ username, password, role = 'user', allowedCustomerIds, wor
   if (!/^[a-zA-Z0-9._@-]{2,64}$/.test(u)) {
     return { ok: false, error: 'Username must be 2–64 characters (letters, numbers, . _ @ -).' };
   }
-  const strength = validatePasswordStrength(p);
+  const strength = validatePasswordStrength(p, u);
   if (!strength.ok) return strength;
   if (users.has(u)) return { ok: false, error: 'That username already exists.' };
   users.set(u, {
@@ -516,7 +541,7 @@ function setUserPassword(username, password) {
   const u = String(username || '').trim();
   const p = String(password || '');
   if (!users.has(u)) return { ok: false, error: 'User not found.' };
-  const strength = validatePasswordStrength(p);
+  const strength = validatePasswordStrength(p, u);
   if (!strength.ok) return strength;
   const row = users.get(u);
   users.set(u, { ...row, passwordHash: hashPassword(p) });

@@ -6,7 +6,15 @@ const { createTmsClient } = require('../tms');
 const { resolveSetup } = require('./setups');
 const { recordWordStat } = require('./wordStats');
 const { decodeMultipartFilename, safeDownloadFilename } = require('../util/filenames');
-const { scanDownloadForPromptLeak, sanitizeUploadBuffer, canonicalText, segmentFollowedInstructions, estimateUploadWords } = require('../util/promptSafety');
+const {
+  scanDownloadForPromptLeak,
+  sanitizeUploadBuffer,
+  canonicalText,
+  segmentFollowedInstructions,
+  estimateUploadWords,
+  billableWordCount,
+  neutralizeActiveMarkup,
+} = require('../util/promptSafety');
 const { getQuotaStatus, reserveRunQuota, commitQuotaHold, releaseQuotaReservation, releaseRunQuota } = require('../auth');
 const { publicErrorText } = require('../util/publicError');
 
@@ -50,6 +58,9 @@ function publicFileError(err) {
   if (/^Empty download at workflow step (\d+)$/i.test(msg)) {
     const step = msg.match(/(\d+)/)?.[1] || '';
     msg = `The translation service returned an empty file at step ${step}.`;
+  }
+  if (/internalerror/i.test(msg)) {
+    msg = 'The translation service could not read this file. Save it as Word or plain text and try again.';
   }
   return publicErrorText(msg, 'This file failed and the server did not return a reason.');
 }
@@ -385,23 +396,24 @@ async function processFile(tms, run, file, mtUid, setup) {
       workflowLevels = [1, 2, 3];
     }
 
-    // Real word count from import — raise the hold to the real size before MT.
-    let precheckWords = null;
+    // Real word count before MT. Comma-joined text is counted word by word,
+    // even when the translation service reports those commas as one word.
+    let precheckWords = billableWordCount(sourceText, 0);
     const quotaStatus = run.username ? getQuotaStatus(run.username) : { unlimited: true };
-    if (!quotaStatus.unlimited && run.username && typeof tms.runProjectWordAnalysis === 'function') {
-      try {
-        const summary = await tms.runProjectWordAnalysis({ projectUid });
-        precheckWords = Number(summary.totalWords) || 0;
-      } catch (err) {
-        console.warn('[pipeline] pre-translate word count failed:', err.message);
-      }
-      if (precheckWords != null) {
-        const commit = commitQuotaHold(run.username, `${run.id}:${file.id}`, precheckWords);
-        if (!commit.ok) {
-          throw new Error(
-            `This file is ${precheckWords.toLocaleString()} words, over your remaining quota (${Number(commit.remaining).toLocaleString()} left). Contact admin for more.`
-          );
+    if (!quotaStatus.unlimited && run.username) {
+      if (typeof tms.runProjectWordAnalysis === 'function') {
+        try {
+          const summary = await tms.runProjectWordAnalysis({ projectUid });
+          precheckWords = billableWordCount(sourceText, summary.totalWords);
+        } catch (err) {
+          console.warn('[pipeline] pre-translate word count failed:', err.message);
         }
+      }
+      const commit = commitQuotaHold(run.username, `${run.id}:${file.id}`, precheckWords);
+      if (!commit.ok) {
+        throw new Error(
+          `This file is ${precheckWords.toLocaleString()} words, over your remaining quota (${Number(commit.remaining).toLocaleString()} left). Contact admin for more.`
+        );
       }
     }
 
@@ -487,12 +499,13 @@ async function processFile(tms, run, file, mtUid, setup) {
         if (!leak.ok) {
           throw new Error(leak.error);
         }
+        const hardened = neutralizeActiveMarkup(cleaned, downloaded.fileName || file.name);
         const outExt = ext || path.parse(downloaded.fileName || '').ext || '';
         const outName = setup?.singleStep
           ? `${base}_${lang}${outExt}`
           : `${base}_v${level}_${lang}${outExt}`;
         const outPath = path.join(run.runDir, `${file.id}-${outName}`);
-        fs.writeFileSync(outPath, cleaned);
+        fs.writeFileSync(outPath, hardened);
         saved.push({
           id: uuidv4(),
           name: outName,
@@ -519,7 +532,7 @@ async function processFile(tms, run, file, mtUid, setup) {
     try {
       if (typeof tms.runProjectWordAnalysis === 'function') {
         const summary = await tms.runProjectWordAnalysis({ projectUid });
-        const words = Number(summary.totalWords) || precheckWords || 0;
+        const words = billableWordCount(sourceText, summary.totalWords) || precheckWords || 0;
         if (run.username && !quotaStatus.unlimited) {
           const commit = commitQuotaHold(run.username, `${run.id}:${file.id}`, words);
           if (!commit.ok) {
@@ -544,7 +557,7 @@ async function processFile(tms, run, file, mtUid, setup) {
           username: run.username,
           fileName: file.name,
           fileCount: summary.fileCount || 1,
-          totalWords: summary.totalWords ?? words,
+          totalWords: words,
         });
       }
     } catch (err) {

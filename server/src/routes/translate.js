@@ -20,7 +20,26 @@ const {
   scanUploadForPromptInjection,
   estimateUploadWords,
   sanitizeUploadBuffer,
+  rtfToPlainTextBuffer,
 } = require('../util/promptSafety');
+
+/** Keep only language codes the translation service actually knows. */
+function canonicalLanguageCodes(sourceLang, targetLangs, languages) {
+  const byCode = new Map();
+  for (const lang of languages || []) {
+    const code = String(lang.code || '').trim();
+    if (code) byCode.set(code.toLowerCase(), code);
+  }
+  const source = byCode.get(String(sourceLang || '').trim().toLowerCase()) || '';
+  const targets = [];
+  let unknownTarget = false;
+  for (const raw of targetLangs || []) {
+    const code = byCode.get(String(raw || '').trim().toLowerCase()) || '';
+    if (!code) unknownTarget = true;
+    else targets.push(code);
+  }
+  return { source, targets, unknownTarget };
+}
 
 const router = express.Router();
 
@@ -135,6 +154,14 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
     }
 
     const tms = createTmsClient();
+    const knownLanguages = await tms.listLanguages();
+    const langs = canonicalLanguageCodes(sourceLang, targetLangs, knownLanguages);
+    if (!langs.source || langs.unknownTarget || !langs.targets.length) {
+      cleanupUploads(files);
+      return res.status(400).json({
+        error: 'Pick a source language and a target language from the list. An unknown language code was not started.',
+      });
+    }
     const allowed = new Set((await tms.listFileExtensions()).map((e) => e.toLowerCase()));
     for (const f of files) {
       const ext = (f.originalname.split('.').pop() || '').toLowerCase();
@@ -166,6 +193,16 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
         if (!inj.ok) {
           cleanupUploads(files);
           return res.status(400).json({ error: inj.error });
+        }
+        if (ext === 'rtf') {
+          const plain = rtfToPlainTextBuffer(buf);
+          if (!plain.length) {
+            cleanupUploads(files);
+            return res.status(400).json({ error: `${f.originalname} is empty. Add content and try again.` });
+          }
+          fs.writeFileSync(f.path, plain);
+          f.originalname = String(f.originalname || 'file.rtf').replace(/\.rtf$/i, '.txt');
+          f.size = plain.length;
         }
       } catch {
         cleanupUploads(files);
@@ -216,8 +253,8 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
 
     const run = await createRun({
       files,
-      sourceLang,
-      targetLangs,
+      sourceLang: langs.source,
+      targetLangs: langs.targets,
       setupId: customerId,
       username: req.user || null,
       quotaRemainingAtStart:
@@ -261,12 +298,14 @@ router.get('/translate/:id/files/:fileId/download', (req, res) => {
   if (downloadId && Array.isArray(file.downloads)) {
     const item = file.downloads.find((d) => d.id === downloadId);
     if (!item?.path) return res.status(404).json({ error: 'That download is no longer available. Run the translation again.' });
+    res.setHeader('X-Content-Type-Options', 'nosniff');
     return res.download(item.path, item.name || file.name);
   }
 
   if (!file.downloadPath) {
     return res.status(409).json({ error: 'The translated file is missing on the server. Run the translation again.' });
   }
+  res.setHeader('X-Content-Type-Options', 'nosniff');
   res.download(file.downloadPath, file.downloadName || file.name);
 });
 
@@ -324,3 +363,4 @@ router.get('/translate/:id/download-all', (req, res) => {
 });
 
 module.exports = router;
+module.exports.canonicalLanguageCodes = canonicalLanguageCodes;

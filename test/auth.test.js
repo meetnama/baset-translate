@@ -35,7 +35,7 @@ test('an empty customer id is blocked when the user has no assigned processes', 
   assert.equal(canUseCustomerId(null, ''), true);
 });
 
-test('password policy requires 8+ mixed case, number, special, and not common', () => {
+test('password policy requires 12+ mixed case, number, special, and not common', () => {
   assert.equal(validatePasswordStrength('0000').ok, false);
   assert.equal(validatePasswordStrength('password').ok, false);
   assert.equal(validatePasswordStrength('pass12').ok, false);
@@ -45,8 +45,11 @@ test('password policy requires 8+ mixed case, number, special, and not common', 
   assert.equal(validatePasswordStrength('ABCD1234!').ok, false); // no lower
   assert.equal(validatePasswordStrength('Abcdabcd!').ok, false); // no number
   assert.equal(validatePasswordStrength('Abcd1234!').ok, false); // common
-  assert.equal(validatePasswordStrength('Tr0ub4dor!x').ok, true);
+  assert.equal(validatePasswordStrength('Tr0ub4dor!x').ok, false); // 11 chars
+  assert.equal(validatePasswordStrength('Tr0ub4dor!xy').ok, true);
   assert.equal(validatePasswordStrength('Lingo#Trust9').ok, true);
+  assert.equal(validatePasswordStrength('Admin#Pass99x', 'admin').ok, false);
+  assert.equal(validatePasswordStrength('Aa1!Aa1!Aa1!').ok, false); // repeated
 });
 
 test('prompt injection scan rejects common instruction overrides', () => {
@@ -84,6 +87,35 @@ test('download leak scan blocks obvious prompt dumps in text files', () => {
 test('estimateUploadWords counts text files', () => {
   const buf = Buffer.from('one two three four');
   assert.equal(estimateUploadWords(buf, 'a.txt'), 4);
+});
+
+test('comma-joined text is counted as separate words', () => {
+  const buf = Buffer.from('Why,is,my,quota,already,used,after,one,translation?');
+  assert.equal(estimateUploadWords(buf, 'q.txt'), 9);
+  const rtf = Buffer.from('{\\rtf1 Why,is,my,quota,already,used,after,one,translation?}');
+  assert.equal(estimateUploadWords(rtf, 'q.rtf'), 9);
+});
+
+test('unknown language codes are rejected before a job exists', () => {
+  const { canonicalLanguageCodes } = require('../server/src/routes/translate');
+  const languages = [{ code: 'en' }, { code: 'ar' }];
+  const ok = canonicalLanguageCodes('EN', ['ar'], languages);
+  assert.equal(ok.source, 'en');
+  assert.deepEqual(ok.targets, ['ar']);
+  assert.equal(ok.unknownTarget, false);
+  const bad = canonicalLanguageCodes('not-a-lang', ['ar'], languages);
+  assert.equal(bad.source, '');
+  const badTarget = canonicalLanguageCodes('en', ['zz'], languages);
+  assert.equal(badTarget.unknownTarget, true);
+});
+
+test('translated html has scripts removed', () => {
+  const { neutralizeActiveMarkup } = require('../server/src/util/promptSafety');
+  const html = Buffer.from('<p>Hello</p><script>alert(1)</script><img src=x onerror="alert(2)">');
+  const out = neutralizeActiveMarkup(html, 'page.html').toString('utf8');
+  assert.equal(out.includes('script'), false);
+  assert.equal(out.includes('onerror'), false);
+  assert.equal(out.includes('Hello'), true);
 });
 
 test('estimateUploadWords returns a size-based ceiling for binary uploads', () => {

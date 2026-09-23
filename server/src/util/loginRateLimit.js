@@ -1,9 +1,13 @@
 /**
- * Login rate limit (in-memory):
+ * Login rate limit:
  * - Progressive delay after each failure (1s, 2s, 4s… up to 32s)
  * - Burst cap: max attempts per IP per minute
  * - Hard lock: 10 failures → 15 minutes
+ * - Same message whether or not the account exists
+ * - Optional shared file so a restart does not wipe the lock
  */
+const fs = require('fs');
+const path = require('path');
 
 const MAX_FAILURES = 10;
 const WINDOW_MS = 15 * 60 * 1000;
@@ -49,6 +53,51 @@ function getBucket(key) {
   if (!Array.isArray(b.attempts)) b.attempts = [];
   if (typeof b.nextAllowedAt !== 'number') b.nextAllowedAt = 0;
   return b;
+}
+
+let storeFile = '';
+
+function useSharedLoginLimitStore(filePath) {
+  storeFile = String(filePath || '');
+  if (!storeFile) return;
+  try {
+    const raw = fs.readFileSync(storeFile, 'utf8');
+    const data = JSON.parse(raw);
+    buckets.clear();
+    for (const [key, row] of Object.entries(data || {})) {
+      if (!row || typeof row !== 'object') continue;
+      buckets.set(key, {
+        fails: Number(row.fails) || 0,
+        windowStart: Number(row.windowStart) || now(),
+        lockedUntil: Number(row.lockedUntil) || 0,
+        nextAllowedAt: Number(row.nextAllowedAt) || 0,
+        attempts: Array.isArray(row.attempts) ? row.attempts.map(Number).filter((n) => n > 0) : [],
+      });
+    }
+  } catch {
+    /* first boot, or unreadable file */
+  }
+}
+
+function persistBuckets() {
+  if (!storeFile) return;
+  const data = {};
+  for (const [key, row] of buckets) data[key] = row;
+  try {
+    fs.mkdirSync(path.dirname(storeFile), { recursive: true });
+    const tmp = `${storeFile}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(data));
+    fs.renameSync(tmp, storeFile);
+  } catch (err) {
+    console.warn('[login-limit] could not save lock state:', err.message);
+  }
+}
+
+function normalizeAccount(username) {
+  return String(username || '')
+    .normalize('NFKC')
+    .replace(/[\s\u200B-\u200F\u202A-\u202E\uFEFF]/g, '')
+    .toLowerCase();
 }
 
 function clientIp(req) {
@@ -100,16 +149,18 @@ function delayBlocked(key) {
 /** @returns {{ ok: true } | { ok: false, error: string, retryAfterSec: number }} */
 function assertLoginAllowed(req, username) {
   const ip = clientIp(req);
-  const userKey = `user:${String(username || '').trim().toLowerCase()}`;
+  const account = normalizeAccount(username);
+  const userKey = `user:${account}`;
   const ipKey = `ip:${ip}`;
 
   // Count every login try toward the IP burst budget (DoS / Intruder flood).
   recordAttempt(ipKey);
 
   for (const key of [userKey, ipKey]) {
-    if (!String(username || '').trim() && key.startsWith('user:')) continue;
+    if (!account && key.startsWith('user:')) continue;
     if (isLocked(key)) {
       const sec = Math.ceil(remainingLockMs(key) / 1000) || 60;
+      persistBuckets();
       return {
         ok: false,
         error: `Too many failed sign-in attempts. Try again in about ${Math.ceil(sec / 60)} minute(s).`,
@@ -119,6 +170,7 @@ function assertLoginAllowed(req, username) {
   }
 
   if (burstBlocked(ipKey)) {
+    persistBuckets();
     return {
       ok: false,
       error: 'Too many sign-in attempts from this network. Wait a minute and try again.',
@@ -128,10 +180,11 @@ function assertLoginAllowed(req, username) {
 
   let delaySec = 0;
   for (const key of [userKey, ipKey]) {
-    if (!String(username || '').trim() && key.startsWith('user:')) continue;
+    if (!account && key.startsWith('user:')) continue;
     delaySec = Math.max(delaySec, delayBlocked(key));
   }
   if (delaySec > 0) {
+    persistBuckets();
     return {
       ok: false,
       error: `Please wait ${delaySec} second(s) before trying again.`,
@@ -139,13 +192,14 @@ function assertLoginAllowed(req, username) {
     };
   }
 
+  persistBuckets();
   return { ok: true };
 }
 
 function recordLoginFailure(req, username) {
   const ip = clientIp(req);
   const keys = [`ip:${ip}`];
-  const u = String(username || '').trim().toLowerCase();
+  const u = normalizeAccount(username);
   if (u) keys.push(`user:${u}`);
   const t = now();
   for (const key of keys) {
@@ -158,18 +212,27 @@ function recordLoginFailure(req, username) {
       b.nextAllowedAt = b.lockedUntil;
     }
   }
+  persistBuckets();
 }
 
 function recordLoginSuccess(req, username) {
   const ip = clientIp(req);
   buckets.delete(`ip:${ip}`);
-  const u = String(username || '').trim().toLowerCase();
+  const u = normalizeAccount(username);
   if (u) buckets.delete(`user:${u}`);
+  persistBuckets();
 }
 
 /** Test helper */
 function _resetLoginRateLimitForTests() {
   buckets.clear();
+  if (storeFile) {
+    try {
+      fs.unlinkSync(storeFile);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 module.exports = {
@@ -185,4 +248,6 @@ module.exports = {
   recordLoginFailure,
   recordLoginSuccess,
   _resetLoginRateLimitForTests,
+  useSharedLoginLimitStore,
+  normalizeAccount,
 };

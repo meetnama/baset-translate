@@ -49,17 +49,17 @@ Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
 | `bootstrapUsers` / `ensureAdminFromEnv` / `loadFromDisk` / `persist` | `data/users.json` lifecycle |
 | `hashPassword` / `verifyPassword` | scrypt |
 | `authenticate` | Login check |
-| `validatePasswordStrength` | New/changed passwords: ≥8, upper+lower, number, special, not common |
+| `validatePasswordStrength` | New/changed passwords: ≥12, upper+lower, number, special, not common, not the username, not a repeated pattern. Stored with scrypt |
 | `signToken` / `verifyToken` | HMAC session cookie |
 | `setSessionCookie` / `clearSessionCookie` / `readSession` | Cookie `lt_session` |
 | `requireAuth` / `requireAdmin` | Middleware |
 | `listUsers` / `createUser` / `setUserPassword` / `setUserRole` / `setUserCustomers` / `setUserWordQuota` / `deleteUser` | Admin CRUD |
 | `importUsersSnapshot` | Replace all users from local snapshot (keeps hashes) |
-| `getQuotaStatus` / `userQuotaAllowsTranslate` / `reserveRunQuota` / `commitQuotaHold` | Word limit includes in-flight holds; one running job per limited user; real count replaces the estimate before MT |
+| `getQuotaStatus` / `userQuotaAllowsTranslate` / `reserveRunQuota` / `commitQuotaHold` | Word limit includes in-flight holds; one running job per limited user; comma-joined text counts as separate words; the higher of that count and the service count is charged before MT |
 | `getAllowedCustomerIds` / `userCanUseCustomer` / `stripCustomerFromUsers` | Lock a user to one or more customers |
 | `authEnabled` / `isAdmin` | Gates |
 
-Routes: `server/src/routes/auth.js` → `/me`, `/login` (progressive delay + burst cap + lock via `util/loginRateLimit.js`), `/logout`, `/users` CRUD.  
+Routes: `server/src/routes/auth.js` → `/me`, `/login` (progressive delay + burst cap + lock via `util/loginRateLimit.js`, lock saved in `data/login-rate-limit.json`), `/logout`, `/users` CRUD.  
 Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-data`. Script: `scripts/sync-local-data-to-render.js`.
 
 ## Translate routes (`server/src/routes/translate.js`)
@@ -68,9 +68,9 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 |---|---|
 | multer `storage` / `uuidSlice` / `cleanupUploads` | Unique upload names; unlink on fail |
 | `decodeMultipartFilename` (`util/filenames.js`) | Fix UTF-8 upload names (Arabic/CJK/etc.) after multer Latin-1 |
-| `scanUploadForPromptInjection` / `estimateUploadWords` / `sanitizeUploadBuffer` (`util/promptSafety.js`) | Extract Office/PDF/RTF text; strip hidden fields, comments, and custom XML; reject injection text; block downloads that add a new link or grow like a dumped instruction sheet |
+| `scanUploadForPromptInjection` / `estimateUploadWords` / `sanitizeUploadBuffer` (`util/promptSafety.js`) | Extract Office/PDF/RTF text the same way; RTF is saved as plain text before the job; strip hidden fields, comments, and custom XML; reject injection text; block downloads that add a new link or grow like a dumped instruction sheet; strip scripts from HTML downloads |
 | `GET /meta` | Languages + extensions + `customers` (filtered by user lock) |
-| `POST /translate` | Start run (`customerId`); reject empty/odd files; quota + injection gates |
+| `POST /translate` | Start run (`customerId`); reject unknown language codes before a job is created; reject empty/odd files; quota + injection gates |
 | `GET /translate/:id` | Poll public run |
 | `GET .../files/:fileId/download` | Single / `downloadId` WF download |
 | `GET .../download-all` | Zip from `downloads[]` |

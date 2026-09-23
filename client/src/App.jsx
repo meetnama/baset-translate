@@ -101,11 +101,25 @@ const COMMON_PASSWORDS = new Set(
 );
 
 const PASSWORD_HINT =
-  'At least 8 characters, with upper and lower case letters, a number, and a special character (e.g. ! @ # $). Avoid common passwords.';
+  'At least 12 characters, with upper and lower case letters, a number, and a special character (e.g. ! @ # $). Do not use the username, a common password, or a repeated pattern.';
 
-function validatePasswordClient(password) {
+function isRepetitivePassword(password) {
+  const s = String(password || '').toLowerCase();
+  if (/(.)\1{3,}/.test(s)) return true;
+  for (let size = 1; size <= 4; size += 1) {
+    const unit = s.slice(0, size);
+    if (!unit) continue;
+    const repeats = Math.floor(s.length / size);
+    if (repeats >= 3 && unit.repeat(repeats) === s.slice(0, size * repeats) && size * repeats === s.length) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function validatePasswordClient(password, username) {
   const p = String(password || '');
-  if (p.length < 8) return { ok: false, error: 'Password must be at least 8 characters.' };
+  if (p.length < 12) return { ok: false, error: 'Password must be at least 12 characters.' };
   if (!/[a-z]/.test(p) || !/[A-Z]/.test(p)) {
     return { ok: false, error: 'Password must include both uppercase and lowercase letters.' };
   }
@@ -113,8 +127,13 @@ function validatePasswordClient(password) {
   if (!/[^A-Za-z0-9]/.test(p)) {
     return { ok: false, error: 'Password must include a special character (e.g. ! @ # $).' };
   }
-  if (COMMON_PASSWORDS.has(p.toLowerCase())) {
-    return { ok: false, error: 'This password is too common. Choose something harder to guess.' };
+  if (COMMON_PASSWORDS.has(p.toLowerCase()) || isRepetitivePassword(p)) {
+    return { ok: false, error: 'This password is too common or too easy to guess. Choose something harder.' };
+  }
+  const name = String(username || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+  const folded = p.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (name.length >= 3 && folded.length >= 3 && (folded.includes(name) || name.includes(folded))) {
+    return { ok: false, error: 'Password must not contain the username.' };
   }
   return { ok: true };
 }
@@ -340,7 +359,7 @@ function UserEditorDialog({
   const submit = (e) => {
     e.preventDefault();
     if (mode === 'add' || password) {
-      const strength = validatePasswordClient(password);
+      const strength = validatePasswordClient(password, username);
       if (!strength.ok) {
         setPasswordError(strength.error);
         return;
@@ -389,7 +408,7 @@ function UserEditorDialog({
               }}
               disabled={busy}
               required={mode === 'add'}
-              minLength={mode === 'add' ? 8 : undefined}
+              minLength={12}
               autoComplete="new-password"
               aria-invalid={passwordError ? 'true' : undefined}
               aria-describedby="password-policy-hint"
