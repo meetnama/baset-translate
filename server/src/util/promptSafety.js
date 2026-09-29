@@ -298,7 +298,75 @@ function crc32(buf) {
   return (~c) >>> 0;
 }
 
-function readZipEntries(buffer) {
+function findEocd(buffer) {
+  if (!buffer || buffer.length < 22) return -1;
+  const min = Math.max(0, buffer.length - 22 - 65535);
+  for (let i = buffer.length - 22; i >= min; i -= 1) {
+    if (buffer.readUInt32LE(i) === 0x06054b50) return i;
+  }
+  return -1;
+}
+
+function inflateZipData(method, compressed) {
+  if (method === 0) return Buffer.from(compressed);
+  if (method === 8) return zlib.inflateRawSync(compressed);
+  return null;
+}
+
+/**
+ * Sizes come from the central directory. Streamed packages leave the local
+ * header sizes at zero and put the real size after the data; scanning for the
+ * next PK byte cuts those parts off and PowerPoint then asks to repair the file.
+ * Returns null when the package cannot be rewritten safely.
+ */
+function readZipFromCentralDirectory(buffer, eocd) {
+  const totalEntries = buffer.readUInt16LE(eocd + 10);
+  const cdSize = buffer.readUInt32LE(eocd + 12);
+  const cdOff = buffer.readUInt32LE(eocd + 16);
+  if (totalEntries === 0xffff || cdOff === 0xffffffff || cdSize === 0xffffffff) return null;
+  if (cdOff + cdSize > buffer.length) return null;
+  const entries = [];
+  let p = cdOff;
+  const end = cdOff + cdSize;
+  while (p + 46 <= end && entries.length < totalEntries) {
+    if (buffer.readUInt32LE(p) !== 0x02014b50) return null;
+    const method = buffer.readUInt16LE(p + 10);
+    const compSize = buffer.readUInt32LE(p + 20);
+    const nameLen = buffer.readUInt16LE(p + 28);
+    const extraLen = buffer.readUInt16LE(p + 30);
+    const commentLen = buffer.readUInt16LE(p + 32);
+    const localOff = buffer.readUInt32LE(p + 42);
+    if (compSize === 0xffffffff || localOff === 0xffffffff) return null;
+    const nameStart = p + 46;
+    const nameEnd = nameStart + nameLen;
+    if (nameEnd > buffer.length) return null;
+    const name = buffer.subarray(nameStart, nameEnd).toString('utf8');
+    p = nameEnd + extraLen + commentLen;
+    if (name.endsWith('/')) {
+      entries.push({ name, data: Buffer.alloc(0) });
+      continue;
+    }
+    if (localOff + 30 > buffer.length || buffer.readUInt32LE(localOff) !== 0x04034b50) return null;
+    const localNameLen = buffer.readUInt16LE(localOff + 26);
+    const localExtraLen = buffer.readUInt16LE(localOff + 28);
+    const dataStart = localOff + 30 + localNameLen + localExtraLen;
+    const dataEnd = dataStart + compSize;
+    if (dataEnd > buffer.length) return null;
+    let data;
+    try {
+      data = inflateZipData(method, buffer.subarray(dataStart, dataEnd));
+    } catch {
+      data = null;
+    }
+    if (!data) return null;
+    entries.push({ name, data });
+  }
+  if (entries.length !== totalEntries) return null;
+  return entries;
+}
+
+/** Local-header walk for a package that has no central directory (unit fixtures). */
+function readZipFromLocalHeaders(buffer) {
   if (!buffer || buffer.length < 30 || buffer.readUInt32LE(0) !== 0x04034b50) return [];
   const entries = [];
   let offset = 0;
@@ -328,8 +396,7 @@ function readZipEntries(buffer) {
     }
     let data = null;
     try {
-      if (method === 0) data = Buffer.from(compressed);
-      else if (method === 8) data = zlib.inflateRawSync(compressed);
+      data = inflateZipData(method, compressed);
     } catch {
       data = null;
     }
@@ -338,30 +405,46 @@ function readZipEntries(buffer) {
   return entries;
 }
 
+function readZipEntries(buffer) {
+  const eocd = findEocd(buffer);
+  if (eocd >= 0) {
+    const entries = readZipFromCentralDirectory(buffer, eocd);
+    return entries || [];
+  }
+  return readZipFromLocalHeaders(buffer);
+}
+
 function writeZip(entries) {
   const locals = [];
   const centrals = [];
   let offset = 0;
   for (const entry of entries) {
     const name = Buffer.from(entry.name);
-    const data = entry.data;
-    const crc = crc32(data);
+    const raw = entry.data || Buffer.alloc(0);
+    const deflated = raw.length ? zlib.deflateRawSync(raw) : raw;
+    const useDeflate = deflated.length > 0 && deflated.length < raw.length;
+    const data = useDeflate ? deflated : raw;
+    const method = useDeflate ? 8 : 0;
+    const crc = crc32(raw);
     const local = Buffer.alloc(30);
     local.writeUInt32LE(0x04034b50, 0);
     local.writeUInt16LE(20, 4);
-    local.writeUInt16LE(20, 6);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(method, 8);
     local.writeUInt32LE(crc, 14);
     local.writeUInt32LE(data.length, 18);
-    local.writeUInt32LE(data.length, 22);
+    local.writeUInt32LE(raw.length, 22);
     local.writeUInt16LE(name.length, 26);
     locals.push(Buffer.concat([local, name, data]));
     const central = Buffer.alloc(46);
     central.writeUInt32LE(0x02014b50, 0);
     central.writeUInt16LE(20, 4);
     central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(method, 10);
     central.writeUInt32LE(crc, 16);
     central.writeUInt32LE(data.length, 20);
-    central.writeUInt32LE(data.length, 24);
+    central.writeUInt32LE(raw.length, 24);
     central.writeUInt16LE(name.length, 28);
     central.writeUInt32LE(offset, 42);
     centrals.push(Buffer.concat([central, name]));
