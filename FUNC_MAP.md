@@ -137,10 +137,12 @@ Thin re-export of `customers.js` (`resolveSetup`, `publicSetups`).
 | Concern | File(s) |
 |---|---|
 | Render blueprint | `render.yaml` |
-| Deploy notes | `DEPLOY-RENDER.md` |
+| Deploy notes | `docs/DEPLOY-RENDER.md` |
+| TMS API notes | `docs/TMS_API_REFERENCE.md` |
 | Docker | `Dockerfile`, `docker-compose.yml` |
 | Env template | `.env.example` |
 | Session memory | `MEMORY.md` |
-| Parent start scripts | `../Start LingoTrust Translate.*`, `../Start-LingoTrust-Translate.ps1` |
+| Parent start scripts | `../Start the app/` |
+| Parent Word guides | `../User guides/` |
 
 `cat-analysis/` was removed from this workspace (unrelated to LingoTrust Translate).
