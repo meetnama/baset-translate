@@ -10,10 +10,10 @@ const {
   scanDownloadForPromptLeak,
   sanitizeUploadBuffer,
   canonicalText,
+  translatedChargeWords,
   segmentFollowedInstructions,
   outputRevealedHiddenPayload,
   estimateUploadWords,
-  billableWordCount,
   neutralizeActiveMarkup,
 } = require('../util/promptSafety');
 const { getQuotaStatus, reserveRunQuota, commitQuotaHold, releaseQuotaReservation, releaseRunQuota } = require('../auth');
@@ -397,26 +397,7 @@ async function processFile(tms, run, file, mtUid, setup) {
       workflowLevels = [1, 2, 3];
     }
 
-    // Real word count before MT. Comma-joined text is counted word by word,
-    // even when the translation service reports those commas as one word.
-    let precheckWords = billableWordCount(sourceText, 0);
     const quotaStatus = run.username ? getQuotaStatus(run.username) : { unlimited: true };
-    if (!quotaStatus.unlimited && run.username) {
-      if (typeof tms.runProjectWordAnalysis === 'function') {
-        try {
-          const summary = await tms.runProjectWordAnalysis({ projectUid });
-          precheckWords = billableWordCount(sourceText, summary.totalWords);
-        } catch (err) {
-          console.warn('[pipeline] pre-translate word count failed:', err.message);
-        }
-      }
-      const commit = commitQuotaHold(run.username, `${run.id}:${file.id}`, precheckWords);
-      if (!commit.ok) {
-        throw new Error(
-          `This file is ${precheckWords.toLocaleString()} words, over your remaining quota (${Number(commit.remaining).toLocaleString()} left). Contact admin for more.`
-        );
-      }
-    }
 
     const outputFileName = safeDownloadFilename(file.name);
     const base = path.parse(outputFileName).name;
@@ -531,38 +512,40 @@ async function processFile(tms, run, file, mtUid, setup) {
       throw new Error('No workflow-step downloads produced');
     }
 
-    // Record usage only after a successful download (failed / over-quota starts do not count).
-    try {
-      if (typeof tms.runProjectWordAnalysis === 'function') {
-        const summary = await tms.runProjectWordAnalysis({ projectUid });
-        const words = billableWordCount(sourceText, summary.totalWords) || precheckWords || 0;
-        if (run.username && !quotaStatus.unlimited) {
-          const commit = commitQuotaHold(run.username, `${run.id}:${file.id}`, words);
-          if (!commit.ok) {
-            for (const d of saved) {
-              try {
-                fs.unlinkSync(d.path);
-              } catch {
-                /* ignore */
-              }
-            }
-            throw new Error(
-              `This file is ${words.toLocaleString()} words, over your remaining quota (${Number(commit.remaining).toLocaleString()} left). Contact admin for more.`
-            );
+    // Bill the finished translation, not the source. A small upload cannot hide a long result.
+    const chargeFiles = saved.map((d) => ({
+      lang: d.lang,
+      step: d.step,
+      text: canonicalText(fs.readFileSync(d.path), d.name),
+    }));
+    const words = translatedChargeWords(chargeFiles);
+    if (run.username && !quotaStatus.unlimited) {
+      const commit = commitQuotaHold(run.username, `${run.id}:${file.id}`, words);
+      if (!commit.ok) {
+        for (const d of saved) {
+          try {
+            fs.unlinkSync(d.path);
+          } catch {
+            /* ignore */
           }
         }
-        recordWordStat({
-          runId: run.id,
-          projectUid,
-          projectName,
-          createdAt: run.createdAt,
-          customerId: setup?.id,
-          username: run.username,
-          fileName: file.name,
-          fileCount: summary.fileCount || 1,
-          totalWords: words,
-        });
+        throw new Error(
+          `This translation is ${words.toLocaleString()} words, over your remaining quota (${Number(commit.remaining).toLocaleString()} left). Contact admin for more.`
+        );
       }
+    }
+    try {
+      recordWordStat({
+        runId: run.id,
+        projectUid,
+        projectName,
+        createdAt: run.createdAt,
+        customerId: setup?.id,
+        username: run.username,
+        fileName: file.name,
+        fileCount: new Set(chargeFiles.map((d) => d.lang || '_')).size || 1,
+        totalWords: words,
+      });
     } catch (err) {
       if (
         /over your remaining quota/i.test(err.message) ||

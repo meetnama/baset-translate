@@ -299,6 +299,24 @@ function wordCount(text) {
   return plainWords(textWithDecodedPayloads(text)).length;
 }
 
+/**
+ * Words to charge: the finished translation for each target language.
+ * Earlier workflow steps of the same language are the same job, so they are not added again.
+ * The source text is not the bill.
+ */
+function translatedChargeWords(downloads) {
+  const best = new Map();
+  for (const item of downloads || []) {
+    const lang = item.lang || '_';
+    const step = Number(item.step) || 0;
+    const prev = best.get(lang);
+    if (!prev || step >= prev.step) best.set(lang, { step, text: item.text || '' });
+  }
+  let n = 0;
+  for (const item of best.values()) n += wordCount(item.text);
+  return n;
+}
+
 /** Charge the higher of our punctuation-aware count and the service count. */
 function billableWordCount(sourceText, remoteWords) {
   const local = wordCount(sourceText);
@@ -673,6 +691,7 @@ module.exports = {
   sanitizeUploadBuffer,
   canonicalText,
   wordCount,
+  translatedChargeWords,
   billableWordCount,
   rtfToPlainTextBuffer,
   neutralizeActiveMarkup,

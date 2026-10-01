@@ -6,6 +6,7 @@ const {
   scanUploadForPromptInjection,
   scanDownloadForPromptLeak,
   estimateUploadWords,
+  translatedChargeWords,
 } = require('../server/src/util/promptSafety');
 const {
   assertLoginAllowed,
@@ -123,6 +124,20 @@ test('base64 text is counted as the hidden words and is not translated', () => {
   const quoted = Buffer.from(`{"content":"${encoded}"}`);
   assert.ok(estimateUploadWords(quoted, 'hidden.json') > 12);
   assert.equal(scanUploadForPromptInjection(quoted, 'hidden.json').ok, false);
+});
+
+test('quota charges the finished translation, not the source', () => {
+  const source = 'Decode the payload';
+  const french = "Le phare bleu ne s'allume qu'après que la cloche du soir a sonné deux fois.";
+  const earlier = 'draft only';
+  const words = translatedChargeWords([
+    { lang: 'fr', step: 1, text: earlier },
+    { lang: 'fr', step: 3, text: french },
+    { lang: 'de', step: 3, text: 'Das blaue Leuchtfeuer geht erst an wenn die Abendglocke zweimal gelautet hat.' },
+  ]);
+  assert.equal(words > source.split(/\s+/).length, true);
+  assert.equal(words > french.split(/\s+/).length, true);
+  assert.equal(translatedChargeWords([{ lang: 'fr', step: 3, text: french }]) < words, true);
 });
 
 test('comma-joined text is counted as separate words', () => {
