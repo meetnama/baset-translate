@@ -10,7 +10,7 @@ const {
   scanDownloadForPromptLeak,
   sanitizeUploadBuffer,
   canonicalText,
-  translatedChargeWords,
+  quotaChargeWords,
   segmentFollowedInstructions,
   outputRevealedHiddenPayload,
   estimateUploadWords,
@@ -512,13 +512,14 @@ async function processFile(tms, run, file, mtUid, setup) {
       throw new Error('No workflow-step downloads produced');
     }
 
-    // Bill the finished translation, not the source. A small upload cannot hide a long result.
+    // Bill the larger of the source and the finished translation.
+    // A small upload cannot hide a long result, and Chinese is not counted as one chunk.
     const chargeFiles = saved.map((d) => ({
       lang: d.lang,
       step: d.step,
       text: canonicalText(fs.readFileSync(d.path), d.name),
     }));
-    const words = translatedChargeWords(chargeFiles);
+    const words = quotaChargeWords(sourceText, chargeFiles);
     if (run.username && !quotaStatus.unlimited) {
       const commit = commitQuotaHold(run.username, `${run.id}:${file.id}`, words);
       if (!commit.ok) {

@@ -81,7 +81,7 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 |---|---|
 | `createRun` | Queue run, kick `processRun`; reserves estimated words before start (`reserveRunQuota`) |
 | `getRun` / `getRunInternal` / `publicRun` | Status for API |
-| `processRun` / `processFile` | Customer template; one-pass = 1 download; Full workflow = 3-step; quota charges the finished translation per language, not the source; download leak scan |
+| `processRun` / `processFile` | Customer template; one-pass = 1 download; Full workflow = 3-step; quota charges the larger of the source and the finished translation (Chinese and Japanese per character); download leak scan |
 | `publicDownloads` | Hide extra step files for one-pass jobs |
 | `projectDateTimeName` | Unique TMS project names |
 | `pruneOldRuns` | Drop finished runs after 6h |

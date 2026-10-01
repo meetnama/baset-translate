@@ -6,7 +6,9 @@ const {
   scanUploadForPromptInjection,
   scanDownloadForPromptLeak,
   estimateUploadWords,
+  wordCount,
   translatedChargeWords,
+  quotaChargeWords,
 } = require('../server/src/util/promptSafety');
 const {
   assertLoginAllowed,
@@ -138,6 +140,17 @@ test('quota charges the finished translation, not the source', () => {
   assert.equal(words > source.split(/\s+/).length, true);
   assert.equal(words > french.split(/\s+/).length, true);
   assert.equal(translatedChargeWords([{ lang: 'fr', step: 3, text: french }]) < words, true);
+});
+
+test('Chinese is counted per character and cannot undercut the source', () => {
+  const source = Array.from({ length: 20 }, (_, i) => `word${i + 1}`).join(' ');
+  const chinese = '蓝色灯塔只有在晚钟敲响两次后才会亮起。配额必须按每个汉字计算。短文件也不能少计。';
+  assert.equal(wordCount(source), 20);
+  assert.equal(wordCount(chinese) > 5, true);
+  const charged = quotaChargeWords(source, [{ lang: 'zh', step: 1, text: chinese }]);
+  assert.equal(charged >= 20, true);
+  const hidden = quotaChargeWords('Hello', [{ lang: 'zh', step: 1, text: chinese }]);
+  assert.equal(hidden, wordCount(chinese));
 });
 
 test('comma-joined text is counted as separate words', () => {

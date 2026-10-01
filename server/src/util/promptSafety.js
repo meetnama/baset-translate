@@ -283,8 +283,11 @@ function normalizeForScan(text) {
 const DEST_RE = /\b(?:https?:\/\/|www\.)[^\s<>"')\]]+|\b[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}\b/gi;
 
 function plainWords(text) {
-  return String(text || '')
+  const spaced = String(text || '')
     .replace(/<[^>]{0,200}>/g, ' ')
+    // Chinese and Japanese do not separate words with spaces. Each character is one word.
+    .replace(/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u3040-\u30FF\u{20000}-\u{2A6DF}]/gu, ' $& ');
+  return spaced
     .split(/[^\p{L}\p{N}]+/u)
     .filter(Boolean);
 }
@@ -300,10 +303,15 @@ function wordCount(text) {
 }
 
 /**
- * Words to charge: the finished translation for each target language.
- * Earlier workflow steps of the same language are the same job, so they are not added again.
- * The source text is not the bill.
+ * Words to charge for one file.
+ * Each target language is counted from its last step.
+ * Chinese and Japanese are counted per character.
+ * The bill is the larger of the source and that translation, so neither side can shrink the quota.
  */
+function quotaChargeWords(sourceText, downloads) {
+  return Math.max(wordCount(sourceText), translatedChargeWords(downloads));
+}
+
 function translatedChargeWords(downloads) {
   const best = new Map();
   for (const item of downloads || []) {
@@ -692,6 +700,7 @@ module.exports = {
   canonicalText,
   wordCount,
   translatedChargeWords,
+  quotaChargeWords,
   billableWordCount,
   rtfToPlainTextBuffer,
   neutralizeActiveMarkup,
