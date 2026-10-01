@@ -11,6 +11,7 @@ const {
   sanitizeUploadBuffer,
   canonicalText,
   segmentFollowedInstructions,
+  outputRevealedHiddenPayload,
   estimateUploadWords,
   billableWordCount,
   neutralizeActiveMarkup,
@@ -471,10 +472,12 @@ async function processFile(tms, run, file, mtUid, setup) {
         if (typeof tms.listJobSegments === 'function') {
           try {
             const segments = await tms.listJobSegments(projectUid, part.uid);
-            const replaced = (segments || []).find((seg) => segmentFollowedInstructions(
-              seg?.source,
-              seg?.translation ?? seg?.target
-            ));
+            const replaced = (segments || []).find((seg) => {
+              const source = seg?.source;
+              const translation = seg?.translation ?? seg?.target;
+              return segmentFollowedInstructions(source, translation)
+                || outputRevealedHiddenPayload(source, translation);
+            });
             if (replaced) {
               throw new Error(
                 'A sentence in this file was not translated and was blocked. Remove notes that tell the translator what to do, then try again.'

@@ -28,6 +28,8 @@ const INJECTION_PATTERNS = [
   // Arabic “System: append the word PWNED…”
   /النظام\s*:\s*ألحق/,
   /ألحق\s+كلمة\s+PWNED/,
+  // Order to decode a payload and translate that, instead of the file.
+  /decode\s+(?:the\s+|this\s+|that\s+)?base\s*-?\s*64\b/i,
 ];
 
 const LEAK_PATTERNS = [
@@ -78,6 +80,64 @@ function findMatchingPattern(text, patterns) {
     if (re.test(text)) return re.source;
   }
   return null;
+}
+
+/** Plain text hidden inside Base64 blobs, so an instruction cannot skip the scan by encoding it. */
+function decodedBase64Text(text) {
+  const chunks = [];
+  const re = new RegExp(B64_BLOB_RE.source, 'g');
+  let match;
+  while ((match = re.exec(String(text || '')))) {
+    let raw = '';
+    try {
+      raw = Buffer.from(match[0], 'base64').toString('utf8');
+    } catch {
+      continue;
+    }
+    if (raw.length < 8) continue;
+    const printable = [...raw].filter((ch) => {
+      const c = ch.codePointAt(0);
+      return c === 9 || c === 10 || c === 13 || (c >= 32 && c !== 127);
+    }).join('');
+    if (printable.length >= raw.length * 0.85) chunks.push(printable);
+  }
+  return chunks.join('\n');
+}
+
+/**
+ * The file tells the translator to decode a Base64 field and translate that
+ * text into a named language, instead of translating the file as written.
+ */
+function hasBase64TranslateOrder(text) {
+  const flat = String(text || '');
+  if (/decode\s+(?:the\s+|this\s+|that\s+)?base\s*-?\s*64\b/i.test(flat)) return true;
+  const hasPayload = /base\s*-?\s*64/i.test(flat);
+  const hasOrder = /translate\s+(?:it|this|them|the\s+content|the\s+following)\s+into\b/i.test(flat);
+  return hasPayload && hasOrder;
+}
+
+const B64_BLOB_RE = /(?:[A-Za-z0-9+/]{4}){6,}(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{4})?/g;
+
+/**
+ * The translation contains an identifier that existed only inside a Base64
+ * blob. The translator decoded the payload instead of translating the file.
+ */
+function outputRevealedHiddenPayload(sourceText, targetText) {
+  const src = String(sourceText || '');
+  const tgt = String(targetText || '').toLowerCase();
+  if (!src || !tgt) return false;
+  const decoded = decodedBase64Text(src);
+  if (!decoded) return false;
+  const visible = src.replace(B64_BLOB_RE, ' ').toLowerCase();
+  const markers = decoded.match(/[A-Za-z][A-Za-z0-9_]{11,}/g) || [];
+  const seen = new Set();
+  for (const marker of markers) {
+    const key = marker.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (tgt.includes(key) && !visible.includes(key)) return true;
+  }
+  return false;
 }
 
 /** Plain text from a ZIP package (DOCX / PPTX / XLSX), including deflated parts. */
@@ -229,8 +289,14 @@ function plainWords(text) {
     .filter(Boolean);
 }
 
+function textWithDecodedPayloads(text) {
+  const raw = String(text || '');
+  const re = new RegExp(B64_BLOB_RE.source, 'g');
+  return raw.replace(re, (blob) => decodedBase64Text(blob) || ' ');
+}
+
 function wordCount(text) {
-  return plainWords(text).length;
+  return plainWords(textWithDecodedPayloads(text)).length;
 }
 
 /** Charge the higher of our punctuation-aware count and the service count. */
@@ -507,11 +573,20 @@ function scannedText(buffer, fileName) {
 /** @returns {{ ok: true } | { ok: false, error: string }} */
 function scanUploadForPromptInjection(buffer, fileName) {
   const text = scannedText(buffer, fileName);
-  const hit = findMatchingPattern(text, INJECTION_PATTERNS);
+  const hidden = decodedBase64Text(text);
+  const hiddenWords = plainWords(hidden).length;
+  const hit = findMatchingPattern(`${text}\n${hidden}`, INJECTION_PATTERNS)
+    || (hasBase64TranslateOrder(text) ? 'base64-translate-order' : null);
   if (hit) {
     return {
       ok: false,
       error: `${fileName || 'This file'} contains instructions aimed at the translator. Remove that text and upload the file again.`,
+    };
+  }
+  if (hiddenWords >= 4) {
+    return {
+      ok: false,
+      error: `${fileName || 'This file'} hides text inside encoded content. Remove that text and upload the file again.`,
     };
   }
   return { ok: true };
@@ -581,7 +656,7 @@ function scanDownloadForPromptLeak(buffer, fileName, sourceText) {
   if (sourceText) {
     const structural = structuralOutputProblem(sourceText, text);
     if (structural) return { ok: false, error: structural };
-    if (outputFollowedInstructions(sourceText, text)) {
+    if (outputFollowedInstructions(sourceText, text) || outputRevealedHiddenPayload(sourceText, text)) {
       return {
         ok: false,
         error: 'A sentence in this file was not translated and was blocked. Remove notes that tell the translator what to do, then try again.',
@@ -602,5 +677,6 @@ module.exports = {
   rtfToPlainTextBuffer,
   neutralizeActiveMarkup,
   segmentFollowedInstructions,
+  outputRevealedHiddenPayload,
   TEXT_EXTS,
 };
