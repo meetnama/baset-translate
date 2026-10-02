@@ -168,6 +168,40 @@ test('an Office file is not blocked because its package contains encoded bytes',
   assert.equal(scanUploadForPromptInjection(Buffer.from(encoded), 'hidden.txt').ok, false);
 });
 
+test('a normal Word and PowerPoint file with long namespace headers is accepted and counted by its text', () => {
+  const ns = [
+    'wpc="http://schemas.microsoft.com/office/word/2010/wordprocessingCanvas"',
+    'mc="http://schemas.openxmlformats.org/markup-compatibility/2006"',
+    'r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"',
+    'm="http://schemas.openxmlformats.org/officeDocument/2006/math"',
+    'wp14="http://schemas.microsoft.com/office/word/2010/wordprocessingDrawing"',
+    'wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing"',
+    'w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"',
+    'w14="http://schemas.microsoft.com/office/word/2010/wordml"',
+    'wpg="http://schemas.microsoft.com/office/word/2010/wordprocessingGroup"',
+    'wps="http://schemas.microsoft.com/office/word/2010/wordprocessingShape"',
+  ].map((a) => `xmlns:${a}`).join(' ');
+  const docXml = `<?xml version="1.0"?><w:document ${ns}><w:body>`
+    + '<w:p><w:r><w:t>Board</w:t></w:r><w:r><w:t xml:space="preserve"> procedures for the committee.</w:t></w:r></w:p>'
+    + '<w:p><w:r><w:t>Second paragraph here.</w:t></w:r></w:p></w:body></w:document>';
+  const docx = zipWithDataDescriptor([
+    { name: '[Content_Types].xml', text: '<Types/>' },
+    { name: 'word/document.xml', text: docXml },
+    { name: 'word/media/image1.png', text: 'x'.repeat(400000) },
+  ]);
+  assert.equal(scanUploadForPromptInjection(docx, 'SEC-BOD-Procedures_EN - Copy.docx').ok, true);
+  assert.equal(estimateUploadWords(docx, 'SEC-BOD-Procedures_EN - Copy.docx'), 8);
+  const slideXml = `<p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`
+    + '<a:p><a:r><a:t>Sustainability report</a:t></a:r></a:p></p:sld>';
+  const pptx = zipWithDataDescriptor([{ name: 'ppt/slides/slide1.xml', text: slideXml }]);
+  assert.equal(scanUploadForPromptInjection(pptx, '20200212_Eskan_Sustainability_H.pptx').ok, true);
+  const encoded = Buffer.from('The blue lighthouse opens only after the evening bell rings twice', 'utf8').toString('base64');
+  const sneaky = zipWithDataDescriptor([
+    { name: 'word/document.xml', text: `<w:document ${ns}><w:p><w:r><w:t>${encoded}</w:t></w:r></w:p></w:document>` },
+  ]);
+  assert.equal(scanUploadForPromptInjection(sneaky, 'sneaky.docx').ok, false);
+});
+
 test('an old PowerPoint file is rejected before a job starts', () => {
   const { legacyOfficeMessage } = require('../server/src/tms/formats');
   assert.match(

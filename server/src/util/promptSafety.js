@@ -59,7 +59,7 @@ const OFFICE_ZIP_EXTS = new Set([
   'xlsx', 'xlsm', 'xltx', 'xltm',
 ]);
 
-const OFFICE_TEXT_PART = /^(word\/(document|footnotes|endnotes|comments|header\d*|footer\d*)\.xml|ppt\/(slides\/slide\d+\.xml|notesSlides\/notesSlide\d+\.xml)|xl\/(sharedStrings\.xml|worksheets\/sheet\d+\.xml))$/i;
+const OFFICE_TEXT_PART = /^(word\/(document|footnotes|endnotes|comments|header\d*|footer\d*)\.xml|ppt\/(slides\/slide\d+\.xml|notesSlides\/notesSlide\d+\.xml)|xl\/(sharedStrings\.xml|worksheets\/sheet\d+\.xml)|(word|ppt|xl)\/(charts\/chart\d+|diagrams\/data\d+)\.xml)$/i;
 
 function fileExt(name) {
   const parts = String(name || '').toLowerCase().split('.');
@@ -87,21 +87,40 @@ function decodedBase64Text(text) {
   const chunks = [];
   const re = new RegExp(B64_BLOB_RE.source, 'g');
   let match;
+  const strict = new TextDecoder('utf-8', { fatal: true });
   while ((match = re.exec(String(text || '')))) {
     let raw = '';
     try {
-      raw = Buffer.from(match[0], 'base64').toString('utf8');
+      raw = strict.decode(Buffer.from(match[0], 'base64'));
     } catch {
       continue;
     }
-    if (raw.length < 8) continue;
-    const printable = [...raw].filter((ch) => {
-      const c = ch.codePointAt(0);
-      return c === 9 || c === 10 || c === 13 || (c >= 32 && c !== 127);
-    }).join('');
-    if (printable.length >= raw.length * 0.85) chunks.push(printable);
+    if (looksLikeProse(raw)) chunks.push(raw);
   }
   return chunks.join('\n');
+}
+
+/**
+ * Decoded bytes count as hidden text only when they read like a sentence.
+ * Web addresses and file paths inside Office XML also match the Base64 pattern,
+ * but they decode to random bytes and must not block a normal document.
+ */
+function looksLikeProse(raw) {
+  const s = String(raw || '');
+  if (s.length < 8) return false;
+  let readable = 0;
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    if (c === 9 || c === 10 || c === 13) {
+      readable += 1;
+      continue;
+    }
+    if (c < 32 || c === 127 || c === 0xfffd) return false;
+    if (/[\p{L}\p{N}\s.,;:!?'"()\-_]/u.test(ch)) readable += 1;
+  }
+  if (readable < s.length * 0.9) return false;
+  const words = s.split(/[^\p{L}\p{N}]+/u).filter(Boolean);
+  return words.length >= 2 && /\s/.test(s);
 }
 
 /**
@@ -140,40 +159,54 @@ function outputRevealedHiddenPayload(sourceText, targetText) {
   return false;
 }
 
-/** Plain text from a ZIP package (DOCX / PPTX / XLSX), including deflated parts. */
+const OFFICE_RUN_RE = /<(w:t|a:t|t)(?:\s[^>]*)?>([^<]*)<\/\1>|<\/(?:w:p|a:p|si)>|<(?:w:tab|w:br|w:cr|a:br)\b[^>]*\/?>/g;
+
+/** Words the reader sees in one Office XML part: text runs only, never tags, namespaces, or ids. */
+function officePartText(xml) {
+  let out = '';
+  const re = new RegExp(OFFICE_RUN_RE.source, 'g');
+  let match;
+  while ((match = re.exec(xml))) {
+    if (match[1]) out += match[2];
+    else if (match[0].startsWith('</')) out += '\n';
+    else out += ' ';
+  }
+  return out;
+}
+
+/** Every text node in the package text parts, including fields and hidden runs. Tags are removed. */
+function officeZipAllText(buffer) {
+  if (!buffer || buffer.length < 30) return '';
+  let entries = [];
+  try {
+    entries = readZipEntries(buffer);
+  } catch {
+    entries = [];
+  }
+  return entries
+    .filter((entry) => OFFICE_TEXT_PART.test(entry.name) && entry.data && entry.data.length)
+    .map((entry) => entry.data.toString('utf8').replace(/<[^>]*>/g, ' '))
+    .join('\n');
+}
+
+/** Plain text from a ZIP package (DOCX / PPTX / XLSX). */
 function officeZipText(buffer) {
   if (!buffer || buffer.length < 30) return '';
+  let entries = [];
+  try {
+    entries = readZipEntries(buffer);
+  } catch {
+    entries = [];
+  }
   const chunks = [];
-  let offset = 0;
-  let parts = 0;
-  while (offset + 30 <= buffer.length && parts < 80 && chunks.join('').length < 1_500_000) {
-    if (buffer.readUInt32LE(offset) !== 0x04034b50) break;
-    const flags = buffer.readUInt16LE(offset + 6);
-    const method = buffer.readUInt16LE(offset + 8);
-    let compSize = buffer.readUInt32LE(offset + 18);
-    const nameLen = buffer.readUInt16LE(offset + 26);
-    const extraLen = buffer.readUInt16LE(offset + 28);
-    const nameStart = offset + 30;
-    const nameEnd = nameStart + nameLen;
-    if (nameEnd > buffer.length) break;
-    const name = buffer.subarray(nameStart, nameEnd).toString('utf8');
-    let dataStart = nameEnd + extraLen;
-    if (dataStart > buffer.length) break;
-    if ((flags & 0x8) && compSize === 0) {
-      const next = buffer.indexOf(Buffer.from([0x50, 0x4b]), dataStart);
-      compSize = next > dataStart ? next - dataStart : buffer.length - dataStart;
-    }
-    const dataEnd = Math.min(buffer.length, dataStart + compSize);
-    const data = buffer.subarray(dataStart, dataEnd);
-    offset = dataEnd;
-    if (!OFFICE_TEXT_PART.test(name)) continue;
-    parts += 1;
-    try {
-      const raw = method === 0 ? data : method === 8 ? zlib.inflateRawSync(data) : null;
-      if (raw && raw.length) chunks.push(raw.toString('utf8'));
-    } catch {
-      /* skip a bad part */
-    }
+  let size = 0;
+  for (const entry of entries) {
+    if (!OFFICE_TEXT_PART.test(entry.name) || !entry.data || !entry.data.length) continue;
+    const text = officePartText(entry.data.toString('utf8'));
+    if (!text.trim()) continue;
+    chunks.push(text);
+    size += text.length;
+    if (size > 1_500_000) break;
   }
   return chunks.join('\n');
 }
@@ -245,7 +278,7 @@ function rtfText(buffer) {
 
 function decodeXmlEntities(text) {
   return String(text || '')
-    .replace(/<[^>]{0,400}>/g, ' ')
+    .replace(/<[^>]*>/g, ' ')
     .replace(/&nbsp;/gi, ' ')
     .replace(/&amp;/gi, '&')
     .replace(/&lt;/gi, '<')
@@ -284,7 +317,7 @@ const DEST_RE = /\b(?:https?:\/\/|www\.)[^\s<>"')\]]+|\b[a-z0-9._%+-]+@[a-z0-9.-
 
 function plainWords(text) {
   const spaced = String(text || '')
-    .replace(/<[^>]{0,200}>/g, ' ')
+    .replace(/<[^>]*>/g, ' ')
     // Chinese and Japanese do not separate words with spaces. Each character is one word.
     .replace(/[\u3400-\u4DBF\u4E00-\u9FFF\uF900-\uFAFF\u3040-\u30FF\u{20000}-\u{2A6DF}]/gu, ' $& ');
   return spaced
@@ -602,7 +635,10 @@ function scanUploadForPromptInjection(buffer, fileName) {
   const text = scannedText(buffer, fileName);
   const hidden = decodedBase64Text(text);
   const hiddenWords = plainWords(hidden).length;
-  const hit = findMatchingPattern(`${text}\n${hidden}`, INJECTION_PATTERNS)
+  const allNodes = OFFICE_ZIP_EXTS.has(fileExt(fileName))
+    ? normalizeForScan(decodeXmlEntities(officeZipAllText(buffer)))
+    : '';
+  const hit = findMatchingPattern(`${text}\n${allNodes}\n${hidden}`, INJECTION_PATTERNS)
     || (hasBase64TranslateOrder(text) ? 'base64-translate-order' : null);
   if (hit) {
     return {
@@ -632,10 +668,16 @@ function estimateUploadWords(buffer, fileName) {
   if (TEXT_EXTS.has(ext)) {
     return wordCount(canonicalText(buffer, fileName).replace(/^\uFEFF/, ''));
   }
-  if (OFFICE_ZIP_EXTS.has(ext) || ext === 'pdf') {
-    const extracted = ext === 'pdf' ? pdfText(buffer) : officeZipText(buffer);
+  if (OFFICE_ZIP_EXTS.has(ext)) {
+    // Images and fonts make a deck large without adding words, so size is only used
+    // when the package text cannot be read at all.
+    const extracted = officeZipText(buffer);
+    if (extracted.trim()) return wordCount(extracted);
+    return Math.ceil(buffer.length / 50);
+  }
+  if (ext === 'pdf') {
     const fromSize = Math.ceil(buffer.length / 50);
-    return Math.max(wordCount(extracted), fromSize);
+    return Math.max(wordCount(pdfText(buffer)), fromSize);
   }
   const sample = readableSample(buffer, 1_000_000);
   const tokens = sample.match(/[A-Za-z\u00C0-\u024F\u0600-\u06FF]{3,}/g) || [];
