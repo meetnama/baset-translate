@@ -70,7 +70,7 @@ Hosted sync: `server/src/routes/adminSync.js` → `POST /api/admin/import-local-
 | `decodeMultipartFilename` (`util/filenames.js`) | Fix UTF-8 upload names (Arabic/CJK/etc.) after multer Latin-1 |
 | `scanUploadForPromptInjection` / `estimateUploadWords` / `sanitizeUploadBuffer` (`util/promptSafety.js`) | Extract Office/PDF/RTF text the same way; RTF is saved as plain text before the job; strip hidden fields, comments, and custom XML; reject injection text; block downloads that add a new link or grow like a dumped instruction sheet; strip scripts from HTML downloads |
 | `GET /meta` | Languages + extensions + `customers` (filtered by user lock) |
-| `POST /translate` | Start run (`customerId`); reject unknown language codes before a job is created; reject empty/odd files; quota + injection gates |
+| `POST /translate` | Start run (`customerId`); reject unknown language codes before a job is created; reject old `.ppt` / `.doc` / `.xls` before a job; reject empty/odd files; quota + injection gates |
 | `GET /translate/:id` | Poll public run |
 | `GET .../files/:fileId/download` | Single / `downloadId` WF download |
 | `GET .../download-all` | Zip from `downloads[]` |

@@ -5,6 +5,7 @@ const multer = require('multer');
 const archiver = require('archiver');
 const config = require('../config');
 const { createTmsClient } = require('../tms');
+const { legacyOfficeMessage } = require('../tms/formats');
 const { createRun, getRunInternal, publicRun, canAccessRun, isEmptyUploadBuffer } = require('../services/pipeline');
 const { publicForUser, getCustomer } = require('../services/customers');
 const {
@@ -169,6 +170,11 @@ router.post('/translate', upload.array('files', 20), async (req, res) => {
       if (!hasDot || !ext) {
         cleanupUploads(files);
         return res.status(400).json({ error: `${f.originalname || 'A file'} has no file type.` });
+      }
+      const legacy = legacyOfficeMessage(f.originalname);
+      if (legacy) {
+        cleanupUploads(files);
+        return res.status(400).json({ error: legacy });
       }
       if (!allowed.has(ext)) {
         cleanupUploads(files);

@@ -168,6 +168,17 @@ test('an Office file is not blocked because its package contains encoded bytes',
   assert.equal(scanUploadForPromptInjection(Buffer.from(encoded), 'hidden.txt').ok, false);
 });
 
+test('an old PowerPoint file is rejected before a job starts', () => {
+  const { legacyOfficeMessage } = require('../server/src/tms/formats');
+  assert.match(
+    legacyOfficeMessage('20180704_CITC Consumer Protection_Proposal_Technical_Exec summary.ppt'),
+    /Save it as \.pptx/
+  );
+  assert.equal(legacyOfficeMessage('report.pptx'), '');
+  assert.match(legacyOfficeMessage('notes.doc'), /Save it as \.docx/);
+  assert.match(legacyOfficeMessage('sheet.xls'), /Save it as \.xlsx/);
+});
+
 test('comma-joined text is counted as separate words', () => {
   const buf = Buffer.from('Why,is,my,quota,already,used,after,one,translation?');
   assert.equal(estimateUploadWords(buf, 'q.txt'), 9);

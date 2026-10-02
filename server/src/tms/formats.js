@@ -22,6 +22,21 @@ const TMS_FILE_EXTENSIONS = [
   'pdf', 'zip',
 ];
 
+/** Binary Office formats the service no longer reads. */
+const LEGACY_OFFICE_SAVE_AS = {
+  doc: 'docx',
+  xls: 'xlsx',
+  ppt: 'pptx',
+  pps: 'ppsx',
+};
+
+function legacyOfficeMessage(fileName) {
+  const ext = String(fileName || '').toLowerCase().split('.').pop();
+  const next = LEGACY_OFFICE_SAVE_AS[ext];
+  if (!next) return '';
+  return `${fileName || 'This file'} is an old Office file. Save it as .${next} and upload that file.`;
+}
+
 /** Fallback language list when live API is unavailable (mock or offline). */
 const FALLBACK_LANGUAGES = [
   { code: 'en', name: 'English' },
@@ -53,4 +68,4 @@ const FALLBACK_LANGUAGES = [
   { code: 'th', name: 'Thai' },
 ];
 
-module.exports = { TMS_FILE_EXTENSIONS, FALLBACK_LANGUAGES };
+module.exports = { TMS_FILE_EXTENSIONS, FALLBACK_LANGUAGES, legacyOfficeMessage };

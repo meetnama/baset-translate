@@ -585,33 +585,21 @@ function sanitizeUploadBuffer(buffer, fileName) {
 /** Same visible text for TXT, Office, PDF, and RTF before injection / leak checks. */
 function canonicalText(buffer, fileName) {
   const ext = fileExt(fileName);
-  const parts = [readableSample(buffer)];
-  if (OFFICE_ZIP_EXTS.has(ext)) parts.push(officeZipText(buffer));
-  else if (ext === 'pdf') parts.push(pdfText(buffer));
-  else if (ext === 'rtf') parts.push(rtfText(buffer));
-  return decodeXmlEntities(parts.filter(Boolean).join('\n')).replace(/\\n/g, '\n');
+  let raw;
+  if (OFFICE_ZIP_EXTS.has(ext)) raw = officeZipText(buffer);
+  else if (ext === 'pdf') raw = pdfText(buffer);
+  else if (ext === 'rtf') raw = rtfText(buffer);
+  else raw = readableSample(buffer);
+  return decodeXmlEntities(raw).replace(/\\n/g, '\n');
 }
 
 function scannedText(buffer, fileName) {
   return normalizeForScan(canonicalText(buffer, fileName));
 }
 
-/**
- * Text the translator actually reads.
- * Office, PDF, and RTF packages also contain binary that looks like Base64.
- * That binary is not hidden prose and must not block the file.
- */
-function visibleDocumentText(buffer, fileName) {
-  const ext = fileExt(fileName);
-  if (OFFICE_ZIP_EXTS.has(ext)) return normalizeForScan(decodeXmlEntities(officeZipText(buffer)));
-  if (ext === 'pdf') return normalizeForScan(pdfText(buffer));
-  if (ext === 'rtf') return normalizeForScan(rtfText(buffer));
-  return scannedText(buffer, fileName);
-}
-
 /** @returns {{ ok: true } | { ok: false, error: string }} */
 function scanUploadForPromptInjection(buffer, fileName) {
-  const text = visibleDocumentText(buffer, fileName);
+  const text = scannedText(buffer, fileName);
   const hidden = decodedBase64Text(text);
   const hiddenWords = plainWords(hidden).length;
   const hit = findMatchingPattern(`${text}\n${hidden}`, INJECTION_PATTERNS)
