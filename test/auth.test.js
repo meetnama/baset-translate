@@ -153,6 +153,21 @@ test('Chinese is counted per character and cannot undercut the source', () => {
   assert.equal(hidden, wordCount(chinese));
 });
 
+test('an Office file is not blocked because its package contains encoded bytes', () => {
+  const sentence = 'The blue lighthouse opens only after the evening bell rings twice today';
+  const encoded = Buffer.from(sentence, 'utf8').toString('base64');
+  const slide = zipDeflated(
+    'ppt/slides/slide1.xml',
+    '<a:t>Sustainability report for the housing program.</a:t>'
+  );
+  const pptx = Buffer.concat([slide, Buffer.from(encoded)]);
+  assert.equal(scanUploadForPromptInjection(pptx, '20200212_Eskan_Sustainability_H.pptx').ok, true);
+  const doc = zipDeflated('word/document.xml', '<w:t>Board procedures for the committee.</w:t>');
+  const docx = Buffer.concat([doc, Buffer.from(encoded)]);
+  assert.equal(scanUploadForPromptInjection(docx, 'SEC-BOD-Procedures_EN - Copy.docx').ok, true);
+  assert.equal(scanUploadForPromptInjection(Buffer.from(encoded), 'hidden.txt').ok, false);
+});
+
 test('comma-joined text is counted as separate words', () => {
   const buf = Buffer.from('Why,is,my,quota,already,used,after,one,translation?');
   assert.equal(estimateUploadWords(buf, 'q.txt'), 9);

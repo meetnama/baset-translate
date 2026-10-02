@@ -596,9 +596,22 @@ function scannedText(buffer, fileName) {
   return normalizeForScan(canonicalText(buffer, fileName));
 }
 
+/**
+ * Text the translator actually reads.
+ * Office, PDF, and RTF packages also contain binary that looks like Base64.
+ * That binary is not hidden prose and must not block the file.
+ */
+function visibleDocumentText(buffer, fileName) {
+  const ext = fileExt(fileName);
+  if (OFFICE_ZIP_EXTS.has(ext)) return normalizeForScan(decodeXmlEntities(officeZipText(buffer)));
+  if (ext === 'pdf') return normalizeForScan(pdfText(buffer));
+  if (ext === 'rtf') return normalizeForScan(rtfText(buffer));
+  return scannedText(buffer, fileName);
+}
+
 /** @returns {{ ok: true } | { ok: false, error: string }} */
 function scanUploadForPromptInjection(buffer, fileName) {
-  const text = scannedText(buffer, fileName);
+  const text = visibleDocumentText(buffer, fileName);
   const hidden = decodedBase64Text(text);
   const hiddenWords = plainWords(hidden).length;
   const hit = findMatchingPattern(`${text}\n${hidden}`, INJECTION_PATTERNS)
