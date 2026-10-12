@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: lingotrust-translate
+    name: baset-translate
     runtime: node
     plan: free
     region: frankfurt
