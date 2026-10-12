@@ -1135,7 +1135,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    document.title = appName || DEFAULT_APP_NAME;
+    const name = appName || DEFAULT_APP_NAME;
+    document.title = name;
+    document.documentElement.dataset.product = name === DEFAULT_APP_NAME ? 'default' : 'custom';
   }, [appName]);
 
   // Local: keep server alive while this tab is open; stop it when the tab/window closes.

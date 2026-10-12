@@ -38,7 +38,7 @@ Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
 | `hosted` | `RENDER` / `HOSTED` |
 | `auth.*` | Admin bootstrap, secret, session, `syncAdminPassword`, `secureCookie` |
 | `corsOrigin` | Allow-list string; enforced by `util/corsAllowlist.js` (no arbitrary Origin reflect) |
-| `appName` | `APP_NAME` or `LingoTrust Translate`. Public on `GET /api/me`. Server rewrites the HTML `<title>` |
+| `appName` | `APP_NAME` or `LingoTrust Translate`. Public on `GET /api/me`. Server rewrites the HTML `<title>`. A different name also sets `data-product="custom"` so the page does not use the LingoTrust theme |
 | `tms.*` | TMS URL/token, 3-step + AI template UIDs, `wf3MtId`, `defaultSetup` |
 | `mode` | `live` vs `mock` |
 | dirs | `dataDir`, `runsDir`, `publicDir` |

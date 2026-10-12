@@ -43,6 +43,37 @@ h1, h2, h3, .brand h1, .btn, .login-aside h1 {
   font-family: Manrope, "DM Sans", system-ui, sans-serif;
 }
 
+/* Other product name: not the LingoTrust purple / Manrope / DM Sans theme. */
+html[data-product="custom"] {
+  --bg: #f3f1ec;
+  --bg-accent: #e6f0ea;
+  --surface: #fffcf8;
+  --surface-2: #f6f3ec;
+  --ink: #1c1917;
+  --muted: #57534e;
+  --faint: #a8a29e;
+  --line: #e7e5e4;
+  --line-strong: #d6d3d1;
+  --brand: #1f6b4a;
+  --brand-2: #164e36;
+  --brand-ink: #ffffff;
+  --brand-soft: #e5f2eb;
+  --ok: #1f6b4a;
+  --shadow: 0 1px 2px rgb(28 25 23 / 0.05), 0 10px 28px rgb(31 107 74 / 0.08);
+  --shadow-lg: 0 1px 2px rgb(28 25 23 / 0.06), 0 20px 48px rgb(31 107 74 / 0.12);
+  --focus: 0 0 0 3px rgb(31 107 74 / 0.28);
+  font-family: "Source Sans 3", system-ui, sans-serif;
+}
+
+html[data-product="custom"] h1,
+html[data-product="custom"] h2,
+html[data-product="custom"] h3,
+html[data-product="custom"] .brand h1,
+html[data-product="custom"] .btn,
+html[data-product="custom"] .login-aside h1 {
+  font-family: Outfit, "Source Sans 3", system-ui, sans-serif;
+}
+
 * { box-sizing: border-box; }
 
 html, body, #root {
