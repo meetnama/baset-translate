@@ -1,5 +1,13 @@
 @import "flag-icons/css/flag-icons.min.css";
 
+@font-face { font-family: Geist; src: url('/fonts/Geist-400.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: Geist; src: url('/fonts/Geist-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: Geist; src: url('/fonts/Geist-600.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+@font-face { font-family: Geist; src: url('/fonts/Geist-700.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('/fonts/SpaceGrotesk-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('/fonts/SpaceGrotesk-600.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+@font-face { font-family: 'Space Grotesk'; src: url('/fonts/SpaceGrotesk-700.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+
 /* LingoTrust Translate — matches lingo-trust.ai
    Purple #5B57E7, ink #1F1F1F, light surfaces. Manrope headings, DM Sans text. */
 
@@ -59,6 +67,8 @@ html[data-product="custom"] {
   --brand-2: #3e8bff;
   --brand-ink: #031320;
   --brand-soft: rgba(1, 191, 251, 0.12);
+  --warn: #fdba74;
+  --danger: #fda4a4;
   --warn-soft: rgba(180, 83, 9, 0.16);
   --warn-line: rgba(254, 215, 170, 0.35);
   --danger-soft: rgba(180, 35, 24, 0.18);
@@ -80,6 +90,7 @@ html[data-product="custom"] body {
 html[data-product="custom"] h1,
 html[data-product="custom"] h2,
 html[data-product="custom"] h3,
+html[data-product="custom"] .btn,
 html[data-product="custom"] .brand h1,
 html[data-product="custom"] .login-aside h1 {
   font-family: "Space Grotesk", Geist, system-ui, sans-serif;
@@ -177,6 +188,30 @@ a {
   height: 100%;
   object-fit: contain;
 }
+
+.logo.baset-wordmark {
+  display: inline-flex;
+  align-items: center;
+  aspect-ratio: auto;
+  height: auto;
+  color: #eaf2f9;
+  font-family: "Space Grotesk", Geist, sans-serif;
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  white-space: nowrap;
+}
+
+.baset-wordmark img { width: 0.92em; height: 0.92em; margin: 0 0.01em; }
+.login-aside .logo.baset-wordmark { height: auto; font-size: 38px; }
+
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 3px;
+}
+
+input[type="checkbox"] { accent-color: var(--brand); }
+::selection { background: var(--brand-soft); color: var(--ink); }
 
 .brand h1 {
   margin: 0;
@@ -340,9 +375,8 @@ a {
 
 .login-aside {
   padding: 40px 36px;
-  background:
-    linear-gradient(160deg, color-mix(in srgb, var(--brand) 24%, #fff), color-mix(in srgb, var(--brand) 10%, #f4f3ff));
-  color: #0f172a;
+  background: #212025;
+  color: #ffffff;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -361,7 +395,7 @@ a {
   font-weight: 700;
   letter-spacing: -0.035em;
   line-height: 1.12;
-  color: #0a0a0a;
+  color: #ffffff;
 }
 
 .login-aside p {
@@ -369,7 +403,7 @@ a {
   max-width: 32ch;
   font-size: 0.95rem;
   line-height: 1.55;
-  color: #334155;
+  color: #d4d2dc;
 }
 
 .login-aside-meta {
@@ -384,9 +418,9 @@ a {
   letter-spacing: 0.01em;
   padding: 6px 10px;
   border-radius: 999px;
-  border: 1px solid rgb(15 23 42 / 0.14);
-  background: rgb(255 255 255 / 0.72);
-  color: #0f172a;
+  border: 1px solid rgb(255 255 255 / 0.18);
+  background: rgb(255 255 255 / 0.06);
+  color: #ffffff;
 }
 
 .login-main {
@@ -409,7 +443,7 @@ a {
   font-size: 0.875rem;
 }
 
-.login-card {
+.login-shell .login-card {
   max-width: none;
   margin: 0;
   padding: 0;
@@ -425,6 +459,7 @@ a {
 }
 
 .login-form .field input,
+.word-stats-delete-form .field input,
 .user-admin-form .field input,
 .user-admin-form .field select {
   width: 100%;
@@ -443,6 +478,7 @@ a {
 }
 
 .login-form .field input:focus,
+.word-stats-delete-form .field input:focus,
 .user-admin-form .field input:focus,
 .user-admin-form .field select:focus,
 select:focus {
@@ -697,8 +733,8 @@ select:focus {
 }
 
 .info-banner {
-  background: rgba(45, 212, 191, 0.12);
-  border: 1px solid rgba(45, 212, 191, 0.35);
+  background: var(--brand-soft);
+  border: 1px solid color-mix(in srgb, var(--brand) 35%, var(--line));
   color: var(--ink);
   border-radius: var(--radius);
   padding: 10px 12px;
@@ -1300,10 +1336,6 @@ button.multi-select-option {
 
 @media (prefers-reduced-transparency: reduce) {
   .login-aside {
-    background: var(--brand);
-  }
-
-  .login-aside .logo img {
-    filter: brightness(0) invert(1);
+    background: #212025;
   }
 }

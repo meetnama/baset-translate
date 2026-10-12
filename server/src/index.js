@@ -119,12 +119,9 @@ function sendSpa(_req, res) {
       /href="https:\/\/fonts\.googleapis\.com\/css2\?[^"]+"/,
       'href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap"'
     );
-    const mark = encodeURIComponent(
-      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><rect width="32" height="32" rx="6" fill="#050d18"/><rect x="8" y="14" width="16" height="4" rx="1" fill="#01bffb"/></svg>'
-    );
     html = html.replace(
       /<link rel="icon"[^>]*>/,
-      `<link rel="icon" href="data:image/svg+xml,${mark}" type="image/svg+xml" />`
+      '<link rel="icon" href="/basetloc-mark.svg" type="image/svg+xml" />'
     );
   }
   res.type('html').send(html);

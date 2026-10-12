@@ -239,20 +239,14 @@ function UserAvatar({ name, hasAvatar, rev, busy, onPick, onRemove, onBroken }) 
   );
 }
 
-function BrandLogo({ className = 'logo', adaptive = false, onBrand = false }) {
+function BrandLogo({ className = 'logo', appName = DEFAULT_APP_NAME, onBrand = false }) {
+  if (appName !== DEFAULT_APP_NAME) {
+    return <span className={`${className} baset-wordmark`} role="img" aria-label="BasetLoc">BasetL<img src="/basetloc-mark.svg" alt="" />c</span>;
+  }
   return (
     <picture className={className}>
-      {onBrand && (
-        <source
-          media="(prefers-reduced-transparency: reduce)"
-          srcSet="/lingotrust-logo-dark.png?v=20261013"
-        />
-      )}
-      {adaptive && (
-        <source media="(prefers-color-scheme: dark)" srcSet="/lingotrust-logo-dark.png?v=20261013" />
-      )}
       <img
-        src="/lingotrust-logo.png?v=20261013"
+        src={onBrand ? '/lingotrust-logo-dark.png?v=20261012-brand2' : '/lingotrust-logo.png?v=20261012-brand2'}
         alt="LingoTrust"
         width={1024}
         height={190}
@@ -319,7 +313,6 @@ function useSmoothProgress(serverProgress, { active, done } = {}) {
 
 function LoginScreen({ onLoggedIn, appName = DEFAULT_APP_NAME }) {
   const heading = productHeading(appName);
-  const showWordmark = heading === 'Translate';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -351,7 +344,7 @@ function LoginScreen({ onLoggedIn, appName = DEFAULT_APP_NAME }) {
       <div className="login-shell">
         <aside className="login-aside" aria-hidden="true">
           <div>
-            {showWordmark && <BrandLogo onBrand />}
+            <BrandLogo appName={appName} onBrand />
             <h1>{heading}</h1>
             <p>Upload a file. Get it translated. Download the result.</p>
           </div>
@@ -1514,7 +1507,7 @@ export default function App() {
     <div className="app">
       <header className="top">
         <div className="brand">
-          {productHeading(appName) === 'Translate' && <BrandLogo />}
+          <BrandLogo appName={appName} />
           <div>
             <h1>{productHeading(appName)}</h1>
             <p>Upload a file. Get it translated. Download the result.</p>
