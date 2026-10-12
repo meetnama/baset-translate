@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '../.env') });
 
-const base = (process.env.RENDER_SERVICE_URL || 'https://baset-translate.onrender.com').replace(
+const base = (process.env.RENDER_SERVICE_URL || 'https://lingotrust-translate.onrender.com').replace(
   /\/$/,
   ''
 );
