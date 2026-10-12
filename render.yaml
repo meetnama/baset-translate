@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: lingotrust-translate
+    name: baset-translate
     runtime: node
     plan: free
     region: frankfurt
@@ -16,6 +16,8 @@ services:
         value: "true"
       - key: HOSTED
         value: "true"
+      - key: APP_NAME
+        value: "Baset Translate"
       # Add these as secret values in the Render dashboard (do not commit real secrets):
       # TMS_API_TOKEN, TMS_AUTH_MODE, TMS_OAUTH_URL, TMS_BASE_URL,
       # TMS_PROJECT_TEMPLATE_UID, TMS_AI_TEMPLATE_UID, AUTH_ADMIN_USER, AUTH_ADMIN_PASSWORD, AUTH_SECRET

@@ -11,6 +11,7 @@ module.exports = {
     String(process.env.RENDER || '').toLowerCase() === 'true'
     || String(process.env.HOSTED || '').toLowerCase() === 'true',
   corsOrigin: process.env.CORS_ORIGIN || '*',
+  appName: (process.env.APP_NAME || 'LingoTrust Translate').trim() || 'LingoTrust Translate',
   maxUploadMb: Number(process.env.MAX_UPLOAD_MB) || 50,
   dataDir: path.join(__dirname, '../../data'),
   runsDir: path.join(__dirname, '../../data/runs'),

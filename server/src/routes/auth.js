@@ -26,6 +26,7 @@ const {
   recordLoginFailure,
   recordLoginSuccess,
 } = require('../util/loginRateLimit');
+const config = require('../config');
 
 const router = express.Router();
 const uploadAvatar = multer({
@@ -35,7 +36,14 @@ const uploadAvatar = multer({
 
 router.get('/me', (req, res) => {
   if (!authEnabled()) {
-    return res.json({ authRequired: false, user: null, isAdmin: false, wordQuota: null, hasAvatar: false });
+    return res.json({
+      authRequired: false,
+      user: null,
+      isAdmin: false,
+      wordQuota: null,
+      hasAvatar: false,
+      appName: config.appName,
+    });
   }
   const { user } = readSession(req);
   const avatar = user ? readUserAvatar(user) : null;
@@ -45,6 +53,7 @@ router.get('/me', (req, res) => {
     isAdmin: user ? isAdmin(user) : false,
     wordQuota: user ? getQuotaStatus(user) : null,
     hasAvatar: Boolean(avatar),
+    appName: config.appName,
   });
 });
 

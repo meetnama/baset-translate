@@ -97,12 +97,34 @@ app.use('/api', customerRoutes);
 app.use('/api', wordStatsRoutes);
 app.use('/api', translateRoutes);
 
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function sendSpa(_req, res) {
+  const file = path.join(publicDir, 'index.html');
+  const html = fs.readFileSync(file, 'utf8').replace(
+    /<title>[^<]*<\/title>/i,
+    `<title>${escapeHtml(config.appName)}</title>`
+  );
+  res.type('html').send(html);
+}
+
 const publicDir = config.publicDir;
 if (fs.existsSync(publicDir)) {
-  app.use(express.static(publicDir));
+  app.use((req, res, next) => {
+    if (req.method !== 'GET' && req.method !== 'HEAD') return next();
+    if (req.path === '/' || req.path === '/index.html') return sendSpa(req, res);
+    return next();
+  });
+  app.use(express.static(publicDir, { index: false }));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api')) return next();
-    res.sendFile(path.join(publicDir, 'index.html'));
+    return sendSpa(req, res);
   });
 }
 
@@ -135,7 +157,7 @@ if (config.hosted && (!config.auth.secret || config.auth.secret === DEFAULT_AUTH
 }
 
 const server = app.listen(config.port, () => {
-  console.log(`LingoTrust Translate listening on http://localhost:${config.port} (${config.mode})`);
+  console.log(`${config.appName} listening on http://localhost:${config.port} (${config.mode})`);
   if (config.hosted) {
     console.log('Hosted mode — browser close will not shut down the server.');
   } else {
@@ -151,7 +173,7 @@ const server = app.listen(config.port, () => {
 
 server.on('error', (err) => {
   if (err.code === 'EADDRINUSE') {
-    console.error(`Port ${config.port} is already in use. Close the other LingoTrust Translate instance and try again.`);
+    console.error(`Port ${config.port} is already in use. Close the other ${config.appName} instance and try again.`);
     process.exit(1);
   }
   throw err;

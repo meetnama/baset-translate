@@ -1,5 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+const DEFAULT_APP_NAME = 'LingoTrust Translate';
+
+function productHeading(appName) {
+  return appName && appName !== DEFAULT_APP_NAME ? appName : 'Translate';
+}
+
 function bytes(n) {
   if (n < 1024) return `${n} B`;
   if (n < 1048576) return `${(n / 1024).toFixed(1)} KB`;
@@ -305,7 +311,9 @@ function useSmoothProgress(serverProgress, { active, done } = {}) {
   return display;
 }
 
-function LoginScreen({ onLoggedIn }) {
+function LoginScreen({ onLoggedIn, appName = DEFAULT_APP_NAME }) {
+  const heading = productHeading(appName);
+  const showWordmark = heading === 'Translate';
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -337,8 +345,8 @@ function LoginScreen({ onLoggedIn }) {
       <div className="login-shell">
         <aside className="login-aside" aria-hidden="true">
           <div>
-            <BrandLogo adaptive={false} />
-            <h1>Translate</h1>
+            {showWordmark && <BrandLogo adaptive={false} />}
+            <h1>{heading}</h1>
             <p>Upload a file. Get it translated. Download the result.</p>
           </div>
           <div className="login-aside-meta">
@@ -388,7 +396,7 @@ function LoginScreen({ onLoggedIn }) {
         </div>
       </div>
 
-      <p className="footer-note">LingoTrust Translate</p>
+      <p className="footer-note">{appName || DEFAULT_APP_NAME}</p>
     </div>
   );
 }
@@ -1096,6 +1104,7 @@ export default function App() {
   const [run, setRun] = useState(null);
   const [error, setError] = useState('');
   const [wordQuota, setWordQuota] = useState(null);
+  const [appName, setAppName] = useState(DEFAULT_APP_NAME);
   const inputRef = useRef(null);
   const pollRef = useRef(null);
   const sourceDropRef = useRef(null);
@@ -1115,6 +1124,7 @@ export default function App() {
         setHasAvatar(!!data.hasAvatar);
         setIsAdmin(!!data.isAdmin);
         setWordQuota(data.wordQuota || null);
+        if (data.appName) setAppName(data.appName);
       } catch {
         if (!cancelled) setAuthRequired(false);
       } finally {
@@ -1123,6 +1133,10 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    document.title = appName || DEFAULT_APP_NAME;
+  }, [appName]);
 
   // Local: keep server alive while this tab is open; stop it when the tab/window closes.
   // Grace on the server cancels exit if we come back quickly (refresh / React remount).
@@ -1470,6 +1484,7 @@ export default function App() {
   if (authRequired && !user) {
     return (
       <LoginScreen
+        appName={appName}
         onLoggedIn={({ user: u, isAdmin: admin }) => {
           setUser(u);
           setIsAdmin(!!admin);
@@ -1491,9 +1506,9 @@ export default function App() {
     <div className="app">
       <header className="top">
         <div className="brand">
-          <BrandLogo />
+          {productHeading(appName) === 'Translate' && <BrandLogo />}
           <div>
-            <h1>Translate</h1>
+            <h1>{productHeading(appName)}</h1>
             <p>Upload a file. Get it translated. Download the result.</p>
           </div>
         </div>
@@ -1873,7 +1888,7 @@ export default function App() {
         </>
       )}
 
-      <p className="footer-note">LingoTrust Translate</p>
+      <p className="footer-note">{appName || DEFAULT_APP_NAME}</p>
     </div>
   );
 }
