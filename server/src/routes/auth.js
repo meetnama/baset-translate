@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const {
   authEnabled,
   authenticate,
@@ -16,6 +17,9 @@ const {
   setUserWordQuota,
   getQuotaStatus,
   deleteUser,
+  setUserAvatar,
+  clearUserAvatar,
+  readUserAvatar,
 } = require('../auth');
 const {
   assertLoginAllowed,
@@ -24,18 +28,47 @@ const {
 } = require('../util/loginRateLimit');
 
 const router = express.Router();
+const uploadAvatar = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 2 * 1024 * 1024, files: 1 },
+});
 
 router.get('/me', (req, res) => {
   if (!authEnabled()) {
-    return res.json({ authRequired: false, user: null, isAdmin: false, wordQuota: null });
+    return res.json({ authRequired: false, user: null, isAdmin: false, wordQuota: null, hasAvatar: false });
   }
   const { user } = readSession(req);
+  const avatar = user ? readUserAvatar(user) : null;
   res.json({
     authRequired: true,
     user: user || null,
     isAdmin: user ? isAdmin(user) : false,
     wordQuota: user ? getQuotaStatus(user) : null,
+    hasAvatar: Boolean(avatar),
   });
+});
+
+router.get('/me/avatar', requireAuth, (req, res) => {
+  const avatar = readUserAvatar(req.user);
+  if (!avatar) return res.status(404).json({ error: 'No photo is saved for this account.' });
+  res.setHeader('Cache-Control', 'private, no-cache');
+  res.type(avatar.ext === 'jpg' ? 'jpeg' : avatar.ext);
+  res.sendFile(avatar.file);
+});
+
+router.post('/me/avatar', requireAuth, (req, res) => {
+  uploadAvatar.single('avatar')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: 'Image must be 2 MB or smaller.' });
+    const result = setUserAvatar(req.user, req.file && req.file.buffer);
+    if (!result.ok) return res.status(400).json({ error: result.error });
+    res.json(result);
+  });
+});
+
+router.delete('/me/avatar', requireAuth, (req, res) => {
+  const result = clearUserAvatar(req.user);
+  if (!result.ok) return res.status(400).json({ error: result.error });
+  res.json(result);
 });
 
 router.post('/login', (req, res) => {

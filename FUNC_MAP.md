@@ -16,7 +16,7 @@ Entry points only. Paths relative to `lingotrust-translate/`. Prefer this over r
 | `logout` | Clear run + `/api/logout` |
 | `addFiles` / `onDrop` / `startNewTranslate` | File list + empty/type checks; reset after done job |
 | `checkUploadFiles` | Reject empty / unknown types before send |
-| `setSource` / `toggleTarget` / `LangFlag` / `UserAvatar` | Language flags; header initials avatar |
+| `setSource` / `toggleTarget` / `LangFlag` / `UserAvatar` | Language flags; header photo upload or initials |
 | `customerId` | Selected customer (filtered by user lock) |
 
 Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
@@ -53,7 +53,7 @@ Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
 | `signToken` / `verifyToken` | HMAC session cookie |
 | `setSessionCookie` / `clearSessionCookie` / `readSession` | Cookie `lt_session` |
 | `requireAuth` / `requireAdmin` | Middleware |
-| `listUsers` / `createUser` / `setUserPassword` / `setUserRole` / `setUserCustomers` / `setUserWordQuota` / `deleteUser` | Admin CRUD |
+| `listUsers` / `createUser` / `setUserPassword` / `setUserRole` / `setUserCustomers` / `setUserWordQuota` / `deleteUser` / `setUserAvatar` / `clearUserAvatar` / `readUserAvatar` | Admin CRUD; signed-in photo stored under `data/avatars` (PNG, JPEG, WEBP, GIF, 2 MB) |
 | `importUsersSnapshot` | Replace all users from local snapshot (keeps hashes) |
 | `getQuotaStatus` / `userQuotaAllowsTranslate` / `reserveRunQuota` / `commitQuotaHold` | Word limit includes in-flight holds; one running job per limited user; comma-joined text counts as separate words; the higher of that count and the service count is charged before MT |
 | `getAllowedCustomerIds` / `userCanUseCustomer` / `stripCustomerFromUsers` | Lock a user to one or more customers |

@@ -198,15 +198,42 @@ function userInitials(name) {
   return letters || '?';
 }
 
-function UserAvatar({ name }) {
+function UserAvatar({ name, hasAvatar, rev, busy, onPick, onRemove, onBroken }) {
   return (
-    <span className="user-avatar" title={name} aria-hidden="true">
-      {userInitials(name)}
+    <span className="user-avatar-wrap">
+      <label className="user-avatar-btn">
+        <input
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          onChange={onPick}
+          disabled={busy}
+        />
+        <span className="user-avatar" title={name}>
+          {hasAvatar ? (
+            <img src={`/api/me/avatar?v=${rev}`} alt="" onError={onBroken} />
+          ) : (
+            userInitials(name)
+          )}
+        </span>
+      </label>
+      <button
+        type="button"
+        className="user-avatar-change"
+        onClick={(e) => e.currentTarget.previousElementSibling.querySelector('input')?.click()}
+        disabled={busy}
+      >
+        {hasAvatar ? 'Change photo' : 'Upload photo'}
+      </button>
+      {hasAvatar && (
+        <button type="button" className="user-avatar-change" onClick={onRemove} disabled={busy}>
+          Remove photo
+        </button>
+      )}
     </span>
   );
 }
 
-function BrandLogo({ className = 'logo', adaptive = true }) {
+function BrandLogo({ className = 'logo', adaptive = false }) {
   return (
     <picture className={className}>
       {adaptive && (
@@ -1041,6 +1068,9 @@ export default function App() {
   const [authReady, setAuthReady] = useState(false);
   const [authRequired, setAuthRequired] = useState(false);
   const [user, setUser] = useState(null);
+  const [hasAvatar, setHasAvatar] = useState(false);
+  const [avatarRev, setAvatarRev] = useState(0);
+  const [avatarBusy, setAvatarBusy] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [showAdmin, setShowAdmin] = useState(false);
   const [meta, setMeta] = useState({
@@ -1082,6 +1112,7 @@ export default function App() {
         if (cancelled) return;
         setAuthRequired(!!data.authRequired);
         setUser(data.user || null);
+        setHasAvatar(!!data.hasAvatar);
         setIsAdmin(!!data.isAdmin);
         setWordQuota(data.wordQuota || null);
       } catch {
@@ -1317,6 +1348,43 @@ export default function App() {
     }
   };
 
+  const uploadAvatar = async (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = '';
+    if (!file) return;
+    setAvatarBusy(true);
+    setError('');
+    try {
+      const fd = new FormData();
+      fd.append('avatar', file);
+      const res = await api('/api/me/avatar', { method: 'POST', body: fd });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Couldn’t save the photo (HTTP ${res.status}).`);
+      setHasAvatar(true);
+      setAvatarRev((n) => n + 1);
+    } catch (err) {
+      setError(err.message || 'Couldn’t save the photo.');
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
+  const removeAvatar = async () => {
+    setAvatarBusy(true);
+    setError('');
+    try {
+      const res = await api('/api/me/avatar', { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Couldn’t remove the photo (HTTP ${res.status}).`);
+      setHasAvatar(false);
+      setAvatarRev((n) => n + 1);
+    } catch (err) {
+      setError(err.message || 'Couldn’t remove the photo.');
+    } finally {
+      setAvatarBusy(false);
+    }
+  };
+
   const logout = async () => {
     startNewTranslate();
     try {
@@ -1325,6 +1393,7 @@ export default function App() {
       /* ignore */
     }
     setUser(null);
+    setHasAvatar(false);
     setIsAdmin(false);
     setShowAdmin(false);
   };
@@ -1410,6 +1479,7 @@ export default function App() {
             .then((r) => r.json())
             .then((data) => {
               if (data.wordQuota) setWordQuota(data.wordQuota);
+              setHasAvatar(!!data.hasAvatar);
             })
             .catch(() => {});
         }}
@@ -1443,7 +1513,15 @@ export default function App() {
             <button type="button" className="btn btn-ghost" style={{ padding: '8px 12px' }} onClick={logout}>
               Sign out
             </button>
-            <UserAvatar name={user} />
+            <UserAvatar
+              name={user}
+              hasAvatar={hasAvatar}
+              rev={avatarRev}
+              busy={avatarBusy}
+              onPick={uploadAvatar}
+              onRemove={removeAvatar}
+              onBroken={() => setHasAvatar(false)}
+            />
           </div>
         )}
       </header>

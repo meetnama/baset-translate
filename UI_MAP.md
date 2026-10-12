@@ -11,7 +11,7 @@ Styles for all UI live in `client/src/styles.css`. Entry: `client/src/main.jsx` 
 | Top header / brand (LingoTrust logo + “Translate”) | `App.jsx` (`BrandLogo`, header `.top`); `client/public/lingotrust-logo.png`, `client/public/lingotrust-logo-dark.png`; styles `.logo` `.brand` | — |
 | Browser icon | `client/index.html`; `client/public/lingotrust-icon.png` (purple T from supplied logo) | — |
 | Login aside brand logo | `App.jsx` (`LoginScreen`, `BrandLogo`) | — |
-| Auth bar (username · admin · initials avatar) | `App.jsx` (`.auth-bar`, `UserAvatar`) | `/api/me` |
+| Auth bar (username · admin · photo or initials) | `App.jsx` (`.auth-bar`, `UserAvatar`) | `/api/me`, `POST/DELETE /api/me/avatar` → `routes/auth.js` `setUserAvatar` |
 | **Manage** / **Back to translate** | `App.jsx` (`showAdmin`, admin button) | — |
 | **Sign out** | `App.jsx` (`logout`) | `POST /api/logout` → `auth.js` `clearSessionCookie` |
 | Manage users panel (list + **Add user** / **Edit** dialog: role, process, word quota) | `App.jsx` (`ManageUsers`, `UserEditorDialog`) | `/api/users*` → `routes/auth.js`, `auth.js` CRUD; password ≥12 + upper/lower + number + special + common-list + not username + not repeated |

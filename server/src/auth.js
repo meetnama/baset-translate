@@ -49,6 +49,43 @@ function normalizeAllowed(ids) {
   return cleaned.length ? cleaned : undefined;
 }
 
+const AVATAR_EXT = new Set(['png', 'jpg', 'webp', 'gif']);
+
+function normalizeAvatarExt(value) {
+  const ext = String(value || '').toLowerCase();
+  return AVATAR_EXT.has(ext) ? ext : undefined;
+}
+
+function avatarDir() {
+  return path.join(config.dataDir, 'avatars');
+}
+
+function avatarFileName(username, ext) {
+  const safe = String(username || '').replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `${safe}.${ext}`;
+}
+
+function avatarFilePath(username, ext) {
+  return path.join(avatarDir(), avatarFileName(username, ext));
+}
+
+function detectAvatar(buffer) {
+  if (!Buffer.isBuffer(buffer) || buffer.length < 12) return null;
+  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) return 'png';
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'jpg';
+  if (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') return 'webp';
+  const gif = buffer.toString('ascii', 0, 6);
+  if (gif === 'GIF87a' || gif === 'GIF89a') return 'gif';
+  return null;
+}
+
+function removeAvatarFiles(username) {
+  for (const ext of AVATAR_EXT) {
+    const file = avatarFilePath(username, ext);
+    if (fs.existsSync(file)) fs.unlinkSync(file);
+  }
+}
+
 function normalizeWordQuota(value) {
   if (value == null || value === '') return null;
   const n = Math.round(Number(value));
@@ -70,6 +107,7 @@ function persist() {
     if (row.wordQuota != null && row.wordQuota > 0) {
       out.wordQuota = row.wordQuota;
     }
+    if (row.avatarExt) out.avatarExt = row.avatarExt;
     return out;
   });
   fs.writeFileSync(usersFile, JSON.stringify({ users: list }, null, 2), 'utf8');
@@ -89,6 +127,7 @@ function loadFromDisk() {
         role: row.role === 'admin' ? 'admin' : 'user',
         allowedCustomerIds: Array.isArray(row.allowedCustomerIds) ? row.allowedCustomerIds : undefined,
         wordQuota: row.role === 'admin' ? null : normalizeWordQuota(row.wordQuota),
+        avatarExt: normalizeAvatarExt(row.avatarExt),
       });
     }
   } catch (err) {
@@ -113,7 +152,7 @@ function ensureAdminFromEnv() {
 
   // Default: do not overwrite passwords changed in the UI. Opt in via AUTH_ADMIN_SYNC_PASSWORD.
   if (syncPassword && !verifyPassword(adminPass, existing.passwordHash)) {
-    users.set(adminUser, { passwordHash: hashPassword(adminPass), role: 'admin' });
+    users.set(adminUser, { ...existing, passwordHash: hashPassword(adminPass), role: 'admin' });
     persist();
     console.log(`Synced admin password for "${adminUser}" from .env`);
     return true;
@@ -205,6 +244,7 @@ function publicUser(username, row, { includeUsage = false } = {}) {
   } else {
     out.wordQuota = null;
   }
+  out.hasAvatar = Boolean(row.avatarExt);
   if (includeUsage) {
     const q = getQuotaStatus(username);
     out.wordsUsed = q.used;
@@ -618,7 +658,47 @@ function deleteUser(username, actor) {
   }
   users.delete(u);
   persist();
+  removeAvatarFiles(u);
   return { ok: true };
+}
+
+function setUserAvatar(username, buffer) {
+  const u = String(username || '').trim();
+  const row = users.get(u);
+  if (!row) return { ok: false, error: 'User not found.' };
+  if (!Buffer.isBuffer(buffer) || !buffer.length) return { ok: false, error: 'Choose an image file.' };
+  if (buffer.length > 2 * 1024 * 1024) return { ok: false, error: 'Image must be 2 MB or smaller.' };
+  const ext = detectAvatar(buffer);
+  if (!ext) return { ok: false, error: 'Use a PNG, JPEG, WEBP, or GIF image.' };
+  fs.mkdirSync(avatarDir(), { recursive: true });
+  removeAvatarFiles(u);
+  fs.writeFileSync(avatarFilePath(u, ext), buffer);
+  users.set(u, { ...row, avatarExt: ext });
+  persist();
+  return { ok: true, hasAvatar: true };
+}
+
+function clearUserAvatar(username) {
+  const u = String(username || '').trim();
+  const row = users.get(u);
+  if (!row) return { ok: false, error: 'User not found.' };
+  removeAvatarFiles(u);
+  if (row.avatarExt) {
+    const next = { ...row };
+    delete next.avatarExt;
+    users.set(u, next);
+    persist();
+  }
+  return { ok: true, hasAvatar: false };
+}
+
+function readUserAvatar(username) {
+  const u = String(username || '').trim();
+  const ext = normalizeAvatarExt(users.get(u)?.avatarExt);
+  if (!ext) return null;
+  const file = avatarFilePath(u, ext);
+  if (!fs.existsSync(file)) return null;
+  return { file, ext };
 }
 
 function signToken(payload) {
@@ -754,6 +834,7 @@ function importUsersSnapshot(list) {
     if (!u || !hash) continue;
     const role = row.role === 'admin' ? 'admin' : 'user';
     if (role === 'admin') admins += 1;
+    const prev = users.get(u);
     next.set(u, {
       passwordHash: hash,
       role,
@@ -764,6 +845,7 @@ function importUsersSnapshot(list) {
             ? (normalizeAllowed(row.allowedCustomerIds) || [])
             : undefined,
       wordQuota: role === 'admin' ? null : normalizeWordQuota(row.wordQuota),
+      avatarExt: normalizeAvatarExt(row.avatarExt) || prev?.avatarExt,
     });
   }
   if (!next.size) return { ok: false, error: 'No valid users in snapshot.' };
@@ -801,6 +883,9 @@ module.exports = {
   _resetQuotaReservationsForTests,
   validatePasswordStrength,
   deleteUser,
+  setUserAvatar,
+  clearUserAvatar,
+  readUserAvatar,
   importUsersSnapshot,
   COOKIE_NAME,
 };
