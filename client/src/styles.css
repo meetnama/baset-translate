@@ -112,10 +112,16 @@ a {
 .logo {
   width: auto;
   height: 36px;
+  aspect-ratio: 1024 / 190;
   display: block;
-  border-radius: 6px;
-  object-fit: contain;
   flex: none;
+}
+
+.logo img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
 .brand h1 {
@@ -379,6 +385,28 @@ select:focus {
 }
 
 @media (max-width: 720px) {
+  .top {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .brand {
+    flex-wrap: wrap;
+  }
+
+  .brand > div {
+    flex: 1;
+    min-width: 160px;
+  }
+
+  .brand .logo {
+    height: 32px;
+  }
+
+  .auth-bar {
+    justify-content: flex-start;
+  }
+
   .user-admin-form {
     grid-template-columns: 1fr;
   }

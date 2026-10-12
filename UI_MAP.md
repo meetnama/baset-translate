@@ -8,7 +8,8 @@ Styles for all UI live in `client/src/styles.css`. Entry: `client/src/main.jsx` 
 | Loading splash (skeleton) | `client/src/App.jsx` (`App`, `authReady`); styles `.loading-screen` | `GET /api/me` → `server/src/routes/auth.js` |
 | Login screen (split aside + form, Sign in) | `client/src/App.jsx` (`LoginScreen`); styles `.login-shell` | `POST /api/login` → `routes/auth.js`, `auth.js`; rate limit `util/loginRateLimit.js` (progressive delay + 20/min IP burst + 10 fails / 15 min lock) |
 | Login error banner | `App.jsx` (`LoginScreen` error) | login route |
-| Top header / brand (LingoTrust logo + “Translate”) | `App.jsx` (`BrandLogo`, header `.top`); `client/public/lingotrust-logo.png`; styles `.logo` `.brand` | — |
+| Top header / brand (LingoTrust logo + “Translate”) | `App.jsx` (`BrandLogo`, header `.top`); `client/public/lingotrust-logo.png`, `client/public/lingotrust-logo-dark.png`; styles `.logo` `.brand` | — |
+| Browser icon | `client/index.html`; `client/public/lingotrust-icon.png` (purple T from supplied logo) | — |
 | Login aside brand logo | `App.jsx` (`LoginScreen`, `BrandLogo`) | — |
 | Auth bar (username · admin) | `App.jsx` (`.auth-bar`) | `/api/me` |
 | **Manage** / **Back to translate** | `App.jsx` (`showAdmin`, admin button) | — |

@@ -138,16 +138,20 @@ function validatePasswordClient(password, username) {
   return { ok: true };
 }
 
-function BrandLogo({ className = 'logo' }) {
+function BrandLogo({ className = 'logo', adaptive = true }) {
   return (
-    <img
-      src="/lingotrust-logo.png"
-      alt="LingoTrust"
-      className={className}
-      width={300}
-      height={59}
-      decoding="async"
-    />
+    <picture className={className}>
+      {adaptive && (
+        <source media="(prefers-color-scheme: dark)" srcSet="/lingotrust-logo-dark.png?v=20261012" />
+      )}
+      <img
+        src="/lingotrust-logo.png?v=20261012"
+        alt="LingoTrust"
+        width={1024}
+        height={190}
+        decoding="async"
+      />
+    </picture>
   );
 }
 
@@ -238,7 +242,7 @@ function LoginScreen({ onLoggedIn }) {
       <div className="login-shell">
         <aside className="login-aside" aria-hidden="true">
           <div>
-            <BrandLogo />
+            <BrandLogo adaptive={false} />
             <h1>Translate</h1>
             <p>Upload a file. Get it translated. Download the result.</p>
           </div>
