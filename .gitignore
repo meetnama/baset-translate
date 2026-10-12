@@ -5,6 +5,7 @@ server/public/
 data/
 uploads/
 .env
+.hosting.local
 *.log
 .DS_Store
 .tmp-pdf/
