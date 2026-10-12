@@ -1,3 +1,5 @@
+@import "flag-icons/css/flag-icons.min.css";
+
 /* LingoTrust Translate — product UI tokens
    Accent: teal (brand lock). Neutrals: cool zinc. Shape: 12px controls / 16px surfaces. */
 
@@ -155,6 +157,21 @@ a {
   border-radius: 999px;
   background: var(--surface);
   border: 1px solid var(--line);
+}
+
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  background: var(--brand);
+  color: var(--brand-ink);
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 0 2px var(--surface);
 }
 
 /* —— Loading —— */
@@ -815,6 +832,62 @@ select {
   height: 15px;
   margin: 0;
   flex-shrink: 0;
+}
+
+button.multi-select-option {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+}
+
+.lang-name,
+.lang-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.multi-select-trigger .lang-name,
+.multi-select-trigger .lang-summary {
+  flex: 1;
+}
+
+.lang-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lang-summary {
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.lang-more {
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--muted);
+}
+
+.lang-flag {
+  width: 20px;
+  height: 15px;
+  flex: none;
+  border-radius: 2px;
+  background-size: cover;
+  box-shadow: 0 0 0 1px rgb(24 24 27 / 0.16);
+}
+
+.lang-flag.fi {
+  line-height: 15px;
+}
+
+.lang-flag.fi:before {
+  content: none;
 }
 
 .lang-empty {

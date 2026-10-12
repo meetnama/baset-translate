@@ -11,7 +11,7 @@ Styles for all UI live in `client/src/styles.css`. Entry: `client/src/main.jsx` 
 | Top header / brand (LingoTrust logo + “Translate”) | `App.jsx` (`BrandLogo`, header `.top`); `client/public/lingotrust-logo.png`, `client/public/lingotrust-logo-dark.png`; styles `.logo` `.brand` | — |
 | Browser icon | `client/index.html`; `client/public/lingotrust-icon.png` (purple T from supplied logo) | — |
 | Login aside brand logo | `App.jsx` (`LoginScreen`, `BrandLogo`) | — |
-| Auth bar (username · admin) | `App.jsx` (`.auth-bar`) | `/api/me` |
+| Auth bar (username · admin · initials avatar) | `App.jsx` (`.auth-bar`, `UserAvatar`) | `/api/me` |
 | **Manage** / **Back to translate** | `App.jsx` (`showAdmin`, admin button) | — |
 | **Sign out** | `App.jsx` (`logout`) | `POST /api/logout` → `auth.js` `clearSessionCookie` |
 | Manage users panel (list + **Add user** / **Edit** dialog: role, process, word quota) | `App.jsx` (`ManageUsers`, `UserEditorDialog`) | `/api/users*` → `routes/auth.js`, `auth.js` CRUD; password ≥12 + upper/lower + number + special + common-list + not username + not repeated |
@@ -21,8 +21,8 @@ Styles for all UI live in `client/src/styles.css`. Entry: `client/src/main.jsx` 
 | Error / meta error banner (translate view) | `App.jsx` | `/api/meta`, translate status |
 | **Template Type** picker (was Customer) | `App.jsx` (`customerId`); styles `.setup-option` | `GET /api/meta` `customers` → `server/src/services/customers.js` |
 | No process assigned (empty customer list) | `App.jsx` (`noCustomer`) | Translate disabled until admin assigns a process |
-| **Languages** card (From select) | `App.jsx` (`sourceLang`, `setSource`) | `GET /api/meta` → `routes/translate.js` |
-| **To** multi-select (trigger, search, checkboxes) | `App.jsx` (`targetLangs`, multi-select) | same `/api/meta` languages |
+| **Languages** card (From select + flag) | `App.jsx` (`sourceLang`, `setSource`, `LangFlag`) | `GET /api/meta` → `routes/translate.js` |
+| **To** multi-select (trigger, search, checkboxes, flags) | `App.jsx` (`targetLangs`, multi-select, `LangFlag`) | same `/api/meta` languages |
 | **Files** card / dropzone / browse | `App.jsx` (`.drop`, `addFiles`, `onDrop`) | upload via `POST /api/translate` |
 | Format chips preview | `App.jsx` (`previewFormats`) | `meta.fileExtensions` from TMS |
 | File list rows + remove (✕) | `App.jsx` (`files` state) | — |

@@ -138,6 +138,74 @@ function validatePasswordClient(password, username) {
   return { ok: true };
 }
 
+const FLAG_ISO = new Set(
+  'ad ae af ag ai al am ao aq ar as at au aw ax az ba bb bd be bf bg bh bi bj bl bm bn bo bq br bs bt bv bw by bz ca cc cd cf cg ch ci ck cl cm cn co cr cu cv cw cx cy cz de dj dk dm do dz ec ee eg eh er es et fi fj fk fm fo fr ga gb gd ge gf gg gh gi gl gm gn gp gq gr gs gt gu gw gy hk hm hn hr ht hu id ie il im in io iq ir is it je jm jo jp ke kg kh ki km kn kp kr kw ky kz la lb lc li lk lr ls lt lu lv ly ma mc md me mf mg mh mk ml mm mn mo mp mq mr ms mt mu mv mw mx my mz na nc ne nf ng ni nl no np nr nu nz om pa pe pf pg ph pk pl pm pn pr ps pt pw py qa re ro rs ru rw sa sb sc sd se sg sh si sj sk sl sm sn so sr ss st sv sx sy sz tc td tf tg th tj tk tl tm tn to tr tt tv tw tz ua ug um us uy uz va vc ve vg vi vn vu wf ws ye yt za zm zw xk'.split(' ')
+);
+
+const LANG_FLAG = {
+  af: 'za', am: 'et', ar: 'sa', az: 'az', be: 'by', bg: 'bg', bn: 'bd', bs: 'ba',
+  ca: 'es', cs: 'cz', cy: 'gb', da: 'dk', de: 'de', el: 'gr', en: 'us', es: 'es',
+  et: 'ee', eu: 'es', fa: 'ir', fi: 'fi', fil: 'ph', fr: 'fr', ga: 'ie', gl: 'es',
+  gu: 'in', he: 'il', hi: 'in', hr: 'hr', hu: 'hu', hy: 'am', id: 'id', is: 'is',
+  it: 'it', ja: 'jp', ka: 'ge', kk: 'kz', km: 'kh', kn: 'in', ko: 'kr', ky: 'kg',
+  lo: 'la', lt: 'lt', lv: 'lv', mk: 'mk', ml: 'in', mn: 'mn', mr: 'in', ms: 'my',
+  mt: 'mt', my: 'mm', nb: 'no', ne: 'np', nl: 'nl', nn: 'no', no: 'no', pa: 'in',
+  pl: 'pl', pt: 'pt', ro: 'ro', ru: 'ru', si: 'lk', sk: 'sk', sl: 'si', sq: 'al',
+  sr: 'rs', sv: 'se', sw: 'ke', ta: 'in', te: 'in', th: 'th', tl: 'ph', tr: 'tr',
+  uk: 'ua', ur: 'pk', uz: 'uz', vi: 'vn', zh: 'cn', zu: 'za',
+};
+
+const CODE_FLAG = {
+  zh_hant: 'tw',
+  zh_hans: 'cn',
+  zh_yue: 'hk',
+  es_419: 'mx',
+};
+
+function flagIso(code) {
+  const raw = String(code || '').trim().toLowerCase().replace(/-/g, '_');
+  if (!raw) return '';
+  if (CODE_FLAG[raw]) return CODE_FLAG[raw];
+  const parts = raw.split('_').filter(Boolean);
+  if (parts.length > 1) {
+    const region = parts[parts.length - 1];
+    if (region.length === 2 && FLAG_ISO.has(region)) return region;
+  }
+  const lang = parts[0];
+  if (LANG_FLAG[lang]) return LANG_FLAG[lang];
+  if (lang.length === 2 && FLAG_ISO.has(lang)) return lang;
+  return '';
+}
+
+function LangFlag({ code }) {
+  const iso = flagIso(code);
+  if (!iso) return null;
+  return <span className={`lang-flag fi fi-${iso}`} aria-hidden="true" />;
+}
+
+function LangName({ code, name }) {
+  return (
+    <span className="lang-name">
+      <LangFlag code={code} />
+      <span>{name}</span>
+    </span>
+  );
+}
+
+function userInitials(name) {
+  const parts = String(name || '').trim().split(/[\s._-]+/).filter(Boolean);
+  const letters = parts.slice(0, 2).map((part) => part[0].toUpperCase()).join('');
+  return letters || '?';
+}
+
+function UserAvatar({ name }) {
+  return (
+    <span className="user-avatar" title={name} aria-hidden="true">
+      {userInitials(name)}
+    </span>
+  );
+}
+
 function BrandLogo({ className = 'logo', adaptive = true }) {
   return (
     <picture className={className}>
@@ -990,6 +1058,8 @@ export default function App() {
   const [files, setFiles] = useState([]);
   const [sourceLang, setSourceLang] = useState('en');
   const [targetLangs, setTargetLangs] = useState(['ar']);
+  const [sourceOpen, setSourceOpen] = useState(false);
+  const [sourceQuery, setSourceQuery] = useState('');
   const [targetOpen, setTargetOpen] = useState(false);
   const [targetQuery, setTargetQuery] = useState('');
   const [busy, setBusy] = useState(false);
@@ -998,6 +1068,7 @@ export default function App() {
   const [wordQuota, setWordQuota] = useState(null);
   const inputRef = useRef(null);
   const pollRef = useRef(null);
+  const sourceDropRef = useRef(null);
   const targetDropRef = useRef(null);
 
   const signedIn = !authRequired || !!user;
@@ -1105,17 +1176,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!targetOpen) return undefined;
+    if (!targetOpen && !sourceOpen) return undefined;
     const onDoc = (e) => {
-      if (targetDropRef.current && !targetDropRef.current.contains(e.target)) {
+      if (targetOpen && targetDropRef.current && !targetDropRef.current.contains(e.target)) {
         setTargetOpen(false);
         setTargetQuery('');
+      }
+      if (sourceOpen && sourceDropRef.current && !sourceDropRef.current.contains(e.target)) {
+        setSourceOpen(false);
+        setSourceQuery('');
       }
     };
     const onKey = (e) => {
       if (e.key === 'Escape') {
         setTargetOpen(false);
         setTargetQuery('');
+        setSourceOpen(false);
+        setSourceQuery('');
       }
     };
     document.addEventListener('mousedown', onDoc);
@@ -1124,7 +1201,7 @@ export default function App() {
       document.removeEventListener('mousedown', onDoc);
       document.removeEventListener('keydown', onKey);
     };
-  }, [targetOpen]);
+  }, [targetOpen, sourceOpen]);
 
   const accept = useMemo(
     () => (meta.fileExtensions || []).map((e) => `.${e}`).join(','),
@@ -1273,12 +1350,25 @@ export default function App() {
     );
   }, [targetOptions, targetQuery]);
 
-  const targetSummary = useMemo(() => {
-    if (!targetLangs.length) return 'Select languages…';
-    const names = targetLangs
-      .map((code) => targetOptions.find((l) => l.code === code)?.name || code);
-    if (names.length <= 2) return names.join(', ');
-    return `${names.slice(0, 2).join(', ')} +${names.length - 2}`;
+  const filteredSources = useMemo(() => {
+    const q = sourceQuery.trim().toLowerCase();
+    const list = meta.languages || [];
+    if (!q) return list;
+    return list.filter(
+      (l) => l.name.toLowerCase().includes(q) || l.code.toLowerCase().includes(q)
+    );
+  }, [meta.languages, sourceQuery]);
+
+  const sourceName = useMemo(
+    () => (meta.languages || []).find((l) => l.code === sourceLang)?.name || sourceLang,
+    [meta.languages, sourceLang]
+  );
+
+  const shownTargets = useMemo(() => {
+    return targetLangs.slice(0, 2).map((code) => ({
+      code,
+      name: targetOptions.find((l) => l.code === code)?.name || code,
+    }));
   }, [targetLangs, targetOptions]);
 
   const setSource = (code) => {
@@ -1286,6 +1376,8 @@ export default function App() {
     setTargetLangs((prev) => prev.filter((c) => c !== code));
     setTargetOpen(false);
     setTargetQuery('');
+    setSourceOpen(false);
+    setSourceQuery('');
   };
 
   const toggleTarget = (code) => {
@@ -1351,6 +1443,7 @@ export default function App() {
             <button type="button" className="btn btn-ghost" style={{ padding: '8px 12px' }} onClick={logout}>
               Sign out
             </button>
+            <UserAvatar name={user} />
           </div>
         )}
       </header>
@@ -1423,14 +1516,59 @@ export default function App() {
         <h2>Languages</h2>
         <p className="sub">Pick the source language and one or more target languages.</p>
         <div className="row langs-row">
-          <label className="field">
+          <div className="field" ref={sourceDropRef}>
             <span>From</span>
-            <select value={sourceLang} onChange={(e) => setSource(e.target.value)} disabled={translating}>
-              {(meta.languages || []).map((l) => (
-                <option key={l.code} value={l.code}>{l.name}</option>
-              ))}
-            </select>
-          </label>
+            <div className={`multi-select${sourceOpen ? ' open' : ''}${translating ? ' disabled' : ''}`}>
+              <button
+                type="button"
+                className="multi-select-trigger"
+                disabled={translating}
+                aria-haspopup="listbox"
+                aria-expanded={sourceOpen}
+                onClick={() => {
+                  if (translating) return;
+                  setSourceOpen((o) => !o);
+                  setTargetOpen(false);
+                  setTargetQuery('');
+                  if (sourceOpen) setSourceQuery('');
+                }}
+              >
+                <LangName code={sourceLang} name={sourceName} />
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
+              {sourceOpen && (
+                <div className="multi-select-panel" role="listbox">
+                  <input
+                    className="multi-select-search"
+                    type="search"
+                    placeholder="Search languages…"
+                    value={sourceQuery}
+                    autoFocus
+                    onChange={(e) => setSourceQuery(e.target.value)}
+                  />
+                  <div className="multi-select-list">
+                    {filteredSources.map((l) => (
+                      <button
+                        key={l.code}
+                        type="button"
+                        role="option"
+                        aria-selected={l.code === sourceLang}
+                        className={`multi-select-option${l.code === sourceLang ? ' on' : ''}`}
+                        onClick={() => setSource(l.code)}
+                      >
+                        <LangName code={l.code} name={l.name} />
+                      </button>
+                    ))}
+                    {!filteredSources.length && (
+                      <p className="lang-empty">No languages match.</p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
           <div className="field" ref={targetDropRef}>
             <span>To{targetLangs.length ? ` · ${targetLangs.length} selected` : ''}</span>
             <div className={`multi-select${targetOpen ? ' open' : ''}${translating ? ' disabled' : ''}`}>
@@ -1443,10 +1581,21 @@ export default function App() {
                 onClick={() => {
                   if (translating) return;
                   setTargetOpen((o) => !o);
+                  setSourceOpen(false);
+                  setSourceQuery('');
                   if (targetOpen) setTargetQuery('');
                 }}
               >
-                <span className={targetLangs.length ? '' : 'placeholder'}>{targetSummary}</span>
+                {targetLangs.length ? (
+                  <span className="lang-summary">
+                    {shownTargets.map((item) => (
+                      <LangName key={item.code} code={item.code} name={item.name} />
+                    ))}
+                    {targetLangs.length > 2 && <span className="lang-more">+{targetLangs.length - 2}</span>}
+                  </span>
+                ) : (
+                  <span className="placeholder">Select languages…</span>
+                )}
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
                   <path d="M6 9l6 6 6-6" />
                 </svg>
@@ -1471,7 +1620,7 @@ export default function App() {
                             checked={checked}
                             onChange={() => toggleTarget(l.code)}
                           />
-                          <span>{l.name}</span>
+                          <LangName code={l.code} name={l.name} />
                         </label>
                       );
                     })}

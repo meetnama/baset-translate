@@ -16,7 +16,7 @@ Entry points only. Paths relative to `lingotrust-translate/`. Prefer this over r
 | `logout` | Clear run + `/api/logout` |
 | `addFiles` / `onDrop` / `startNewTranslate` | File list + empty/type checks; reset after done job |
 | `checkUploadFiles` | Reject empty / unknown types before send |
-| `setSource` / `toggleTarget` | Language selection |
+| `setSource` / `toggleTarget` / `LangFlag` / `UserAvatar` | Language flags; header initials avatar |
 | `customerId` | Selected customer (filtered by user lock) |
 
 Styles: `client/src/styles.css`. Bootstrap: `client/src/main.jsx`.
