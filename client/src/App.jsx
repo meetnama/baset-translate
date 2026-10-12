@@ -239,14 +239,20 @@ function UserAvatar({ name, hasAvatar, rev, busy, onPick, onRemove, onBroken }) 
   );
 }
 
-function BrandLogo({ className = 'logo', adaptive = false }) {
+function BrandLogo({ className = 'logo', adaptive = false, onBrand = false }) {
   return (
     <picture className={className}>
+      {onBrand && (
+        <source
+          media="(prefers-reduced-transparency: reduce)"
+          srcSet="/lingotrust-logo-dark.png?v=20261013"
+        />
+      )}
       {adaptive && (
-        <source media="(prefers-color-scheme: dark)" srcSet="/lingotrust-logo-dark.png?v=20261012" />
+        <source media="(prefers-color-scheme: dark)" srcSet="/lingotrust-logo-dark.png?v=20261013" />
       )}
       <img
-        src="/lingotrust-logo.png?v=20261012"
+        src="/lingotrust-logo.png?v=20261013"
         alt="LingoTrust"
         width={1024}
         height={190}
@@ -345,7 +351,7 @@ function LoginScreen({ onLoggedIn, appName = DEFAULT_APP_NAME }) {
       <div className="login-shell">
         <aside className="login-aside" aria-hidden="true">
           <div>
-            {showWordmark && <BrandLogo adaptive={false} />}
+            {showWordmark && <BrandLogo onBrand />}
             <h1>{heading}</h1>
             <p>Upload a file. Get it translated. Download the result.</p>
           </div>
