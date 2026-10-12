@@ -138,6 +138,7 @@ Thin re-export of `customers.js` (`resolveSetup`, `publicSetups`).
 |---|---|
 | Render blueprint | `render.yaml` |
 | Deploy notes | `docs/DEPLOY-RENDER.md` |
+| Namecheap cPanel deployment | `docs/DEPLOY-CPANEL.md` |
 | TMS API notes | `docs/TMS_API_REFERENCE.md` |
 | Docker | `Dockerfile`, `docker-compose.yml` |
 | Env template | `.env.example` |
